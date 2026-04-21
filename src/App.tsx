@@ -83,7 +83,7 @@ function Hero() {
         transition={{ duration: 1, delay: 0.5 }}
         className="absolute bottom-10 left-6 z-10 flex flex-col gap-4"
       >
-        <h1 className="text-[11vw] md:text-[2.2vw] leading-[0.95] font-body font-extrabold text-white tracking-tight" style={{ fontSize: 'clamp(2rem, 2.2vw, 2.8rem)' }}>
+        <h1 className="text-[11vw] md:text-[3vw] leading-[0.95] font-body font-extrabold text-white tracking-tight">
           Aventuras<br />que valem a pena<span className="text-neon-yellow">.</span>
         </h1>
       </motion.div>
@@ -299,7 +299,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
         >
           <div>
             <p className="text-white/25 font-body text-[10px] uppercase tracking-[0.4em] mb-4">As nossas experiências</p>
-            <h2 className="font-body font-bold text-white leading-[0.9]" style={{ fontSize: 'clamp(2rem, 4vw, 4rem)' }}>
+            <h2 className="text-5xl md:text-7xl font-body font-bold text-white leading-[0.9]">
               Bored<br/><span className="text-neon-yellow">Originals</span>
             </h2>
           </div>
@@ -338,7 +338,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
               transition={{ duration: 0.6, delay: i * 0.08 }}
               onClick={() => { if (!dragged) { onActivity?.(i); } }}
               className="group relative flex-shrink-0 overflow-hidden rounded-3xl"
-              style={{ width: 'clamp(260px, 22vw, 380px)', aspectRatio: (item as any).cardAspectRatio ?? '2/3', pointerEvents: dragged ? 'none' : 'auto', cursor: 'pointer' }}
+              style={{ width: 'clamp(340px, 33vw, 520px)', aspectRatio: (item as any).cardAspectRatio ?? '2/3', pointerEvents: dragged ? 'none' : 'auto', cursor: 'pointer' }}
             >
               <img
                 src={item.image}
@@ -508,7 +508,7 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
       <div className="max-w-5xl mx-auto w-full mb-14 flex items-end justify-between">
         <div>
           <p className="text-white/30 font-body text-[11px] uppercase tracking-[0.3em] font-semibold mb-4">Reserva o teu lugar</p>
-          <h2 className="font-body font-extrabold text-white leading-none tracking-tight whitespace-nowrap" style={{ fontSize: 'clamp(2.5rem, 5vw, 5rem)' }}>Próximas Saídas</h2>
+          <h2 className="text-6xl md:text-8xl font-body font-extrabold text-white leading-none tracking-tight whitespace-nowrap">Próximas Saídas</h2>
         </div>
         <p className="text-white/25 font-body text-sm text-right leading-relaxed hidden md:block">
           Grupos reduzidos.<br />Vagas limitadas.
