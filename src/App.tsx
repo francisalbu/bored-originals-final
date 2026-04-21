@@ -4,7 +4,8 @@
  */
 
 import { motion, useScroll, useTransform } from 'motion/react';
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import type { MouseEvent, FormEvent } from 'react';
 import { MapPin, Flame, Zap, Compass, Tent, Mountain } from 'lucide-react';
 import { getAdventures, getAdventureByIndex } from './lib/supabase';
@@ -13,53 +14,147 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '');
 
+function slugify(s: string): string {
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 function Navbar({ onConquista, onHistoria, onHome, onApoio, onAllExperiences }: { onConquista?: () => void; onHistoria?: () => void; onHome?: () => void; onApoio?: () => void; onAllExperiences?: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
-    <motion.nav
-      initial={{ y: -20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
-      className="fixed top-0 left-0 right-0 z-40 pointer-events-none"
-    >
-      <div className="pointer-events-auto flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent backdrop-blur-0 px-8 md:px-14 py-5">
-        {/* Left links */}
-        <div className="hidden md:flex items-center gap-10">
-          <button onClick={onAllExperiences} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Experiências</button>
+    <>
+      <motion.nav
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
+        className="fixed top-0 left-0 right-0 z-40 pointer-events-none"
+      >
+        <div className="pointer-events-auto flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent backdrop-blur-0 px-8 md:px-14 py-5">
+          {/* Left links — desktop only */}
+          <div className="hidden md:flex items-center gap-10">
+            <button onClick={onAllExperiences} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Experiências</button>
+          </div>
+
+          {/* Center logo — desktop only */}
+          <button onClick={onHome} className="hidden md:block absolute left-1/2 -translate-x-1/2 focus:outline-none">
+            <img
+              src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png"
+              alt="Bored Originals"
+              className="h-14 w-auto drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)] hover:opacity-80 transition-opacity duration-200"
+            />
+          </button>
+
+          {/* Right links — desktop only */}
+          <div className="hidden md:flex items-center gap-10">
+            <button onClick={onHistoria} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Sobre Nós</button>
+            <button onClick={onApoio} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Apoio</button>
+            <button onClick={onAllExperiences} className="bg-neon-yellow text-brutal-black px-5 py-2 text-sm font-body font-bold uppercase tracking-[0.12em] rounded-lg hover:bg-white transition-colors duration-300">
+              Reservar
+            </button>
+          </div>
+
+          {/* Mobile bar: logo center + hamburger right */}
+          <div className="flex md:hidden items-center justify-between w-full">
+            {/* Hamburger */}
+            <button
+              onClick={() => setMenuOpen(true)}
+              className="focus:outline-none flex flex-col gap-[5px] p-1"
+              aria-label="Abrir menu"
+            >
+              <span className="block w-6 h-[2px] bg-white rounded-full" />
+              <span className="block w-6 h-[2px] bg-white rounded-full" />
+              <span className="block w-4 h-[2px] bg-white rounded-full" />
+            </button>
+
+            {/* Logo centered */}
+            <button onClick={onHome} className="absolute left-1/2 -translate-x-1/2 focus:outline-none">
+              <img
+                src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png"
+                alt="Bored Originals"
+                className="h-9 w-auto drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]"
+              />
+            </button>
+
+            {/* Reservar */}
+            <button onClick={onAllExperiences} className="bg-neon-yellow text-brutal-black px-4 py-1.5 text-xs font-body font-bold uppercase tracking-[0.1em] rounded-lg">
+              Reservar
+            </button>
+          </div>
         </div>
+      </motion.nav>
 
-        {/* Center logo */}
-        <button onClick={onHome} className="absolute left-1/2 -translate-x-1/2 focus:outline-none">
-          <img
-            src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png"
-            alt="Bored Originals"
-            className="h-10 md:h-14 w-auto drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)] hover:opacity-80 transition-opacity duration-200"
-          />
-        </button>
-
-        {/* Right links */}
-        <div className="hidden md:flex items-center gap-10">
-          <button onClick={onHistoria} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Sobre Nós</button>
-          <button onClick={onApoio} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Apoio</button>
-          <a href="#proximas-saidas" className="bg-neon-yellow text-brutal-black px-5 py-2 text-sm font-body font-bold uppercase tracking-[0.12em] rounded-lg hover:bg-white transition-colors duration-300">
-            Reservar
-          </a>
-        </div>
-
-        {/* Mobile: logo left + reservar right */}
-        <div className="flex md:hidden items-center justify-between w-full">
-          <button onClick={onHome} className="focus:outline-none">
+      {/* Mobile full-screen menu */}
+      {menuOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+          className="fixed inset-0 z-50 md:hidden bg-brutal-black flex flex-col"
+        >
+          {/* Top bar */}
+          <div className="flex items-center justify-between px-6 pt-6 pb-4">
             <img
               src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png"
               alt="Bored Originals"
               className="h-9 w-auto"
             />
-          </button>
-          <a href="#proximas-saidas" className="bg-neon-yellow text-brutal-black px-4 py-1.5 text-xs font-body font-bold uppercase tracking-[0.1em] rounded-lg">
-            Reservar
-          </a>
-        </div>
-      </div>
-    </motion.nav>
+            <button
+              onClick={() => setMenuOpen(false)}
+              className="w-10 h-10 flex items-center justify-center rounded-full border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-colors focus:outline-none"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 2l12 12M14 2L2 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+          {/* Nav links */}
+          <nav className="flex flex-col flex-1 px-6 pt-8 gap-0">
+            {[
+              { label: 'Experiências', action: () => { onAllExperiences?.(); setMenuOpen(false); } },
+              { label: 'Sobre Nós',    action: () => { onHistoria?.();      setMenuOpen(false); } },
+              { label: 'Apoio',        action: () => { onApoio?.();         setMenuOpen(false); } },
+            ].map(({ label, action }, i) => (
+              <motion.button
+                key={label}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.08 + i * 0.07, duration: 0.35 }}
+                onClick={action}
+                className="group flex items-center justify-between py-6 border-b border-white/[0.07] focus:outline-none"
+              >
+                <span className="text-white font-body font-extrabold text-[2rem] leading-none tracking-tight group-active:text-neon-yellow transition-colors">
+                  {label}
+                </span>
+                <svg className="text-white/20 group-active:text-neon-yellow transition-colors" width="20" height="14" viewBox="0 0 20 14" fill="none">
+                  <path d="M0 7h18M12 1l6 6-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </motion.button>
+            ))}
+          </nav>
+
+          {/* Bottom area */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.32, duration: 0.4 }}
+            className="px-6 pb-12 flex flex-col gap-4"
+          >
+            <button
+              onClick={() => { onAllExperiences?.(); setMenuOpen(false); }}
+              className="block w-full text-center bg-neon-yellow text-brutal-black font-body font-extrabold text-sm uppercase tracking-[0.18em] py-5 rounded-2xl active:bg-white transition-colors"
+            >
+              Reservar lugar
+            </button>
+            <p className="text-center text-white/15 font-body text-[10px] uppercase tracking-[0.3em]">Aventuras que valem a pena</p>
+          </motion.div>
+        </motion.div>
+      )}
+    </>
   );
 }
 
@@ -255,15 +350,16 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
 
   // Usar dados do Supabase se disponíveis, senão fallback para os hardcoded
   const items = dbAdventures.length > 0
-    ? dbAdventures.map((a: any) => ({
+    ? dbAdventures.map((a: any, i: number) => ({
         title: a.title,
         desc: a.tagline || a.description,
         image: a.card_image,
         hoverVideo: a.hover_video || undefined,
         comingSoon: a.coming_soon,
         price: a.price ?? null,
+        _dbIndex: a.index ?? i,
       }))
-    : originals;
+    : originals.map((o, i) => ({ ...o, _dbIndex: i }));
 
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     isDragging.current = true;
@@ -289,7 +385,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
     <section id="originals" className="bg-brutal-black relative z-10 pt-24 pb-0">
       {notifyItem && <NotifyModal title={notifyItem} onClose={() => setNotifyItem(null)} />}
       {/* Header */}
-      <div className="px-8 md:px-16 pb-12">
+      <div className="px-4 md:px-16 pb-12">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -299,7 +395,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
         >
           <div>
             <p className="text-white/25 font-body text-[10px] uppercase tracking-[0.4em] mb-4">As nossas experiências</p>
-            <h2 className="text-5xl md:text-7xl font-body font-bold text-white leading-[0.9]">
+            <h2 className="text-4xl md:text-7xl font-body font-bold text-white leading-[0.9]">
               Bored<br/><span className="text-neon-yellow">Originals</span>
             </h2>
           </div>
@@ -328,7 +424,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
       >
-        <div className="flex gap-5 px-8 md:px-16 pb-16" style={{ width: 'max-content' }}>
+        <div className="flex gap-4 md:gap-5 px-4 md:px-16 pb-16" style={{ width: 'max-content' }}>
           {items.map((item, i) => (
             <motion.div
               key={i}
@@ -336,9 +432,9 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: i * 0.08 }}
-              onClick={() => { if (!dragged) { onActivity?.(i); } }}
+              onClick={() => { if (!dragged) { onActivity?.((item as any)._dbIndex ?? i); } }}
               className="group relative flex-shrink-0 overflow-hidden rounded-3xl"
-              style={{ width: 'clamp(340px, 33vw, 520px)', aspectRatio: (item as any).cardAspectRatio ?? '2/3', pointerEvents: dragged ? 'none' : 'auto', cursor: 'pointer' }}
+              style={{ width: 'clamp(260px, 72vw, 520px)', aspectRatio: (item as any).cardAspectRatio ?? '2/3', pointerEvents: dragged ? 'none' : 'auto', cursor: 'pointer' }}
             >
               <img
                 src={item.image}
@@ -382,10 +478,10 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
                       {item.desc}
                     </p>
                     <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-150">
-                        <button onClick={e => { e.stopPropagation(); onActivity?.(i); }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
+                        <button onClick={e => { e.stopPropagation(); onActivity?.((item as any)._dbIndex ?? i); }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
                           {item.comingSoon ? 'Entrar na lista' : 'Reservar'}
                         </button>
-                        <button onClick={e => { e.stopPropagation(); onActivity?.(i); }} className="border border-white/20 text-white/60 px-4 py-2 text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-xl hover:border-white/60 hover:text-white transition-colors">
+                        <button onClick={e => { e.stopPropagation(); onActivity?.((item as any)._dbIndex ?? i); }} className="border border-white/20 text-white/60 px-4 py-2 text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-xl hover:border-white/60 hover:text-white transition-colors">
                           Saber mais
                         </button>
                       </div>
@@ -498,12 +594,12 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
   const items = fromDb.length > 0 ? fromDb : proximasSaidas;
 
   return (
-    <section id="proximas-saidas" className="bg-brutal-black min-h-screen flex flex-col justify-center py-20 px-6 md:px-20">
+    <section id="proximas-saidas" className="bg-brutal-black min-h-screen flex flex-col justify-center py-16 px-4 md:px-20">
       {/* Header */}
       <div className="max-w-5xl mx-auto w-full mb-14 flex items-end justify-between">
         <div>
           <p className="text-white/30 font-body text-[11px] uppercase tracking-[0.3em] font-semibold mb-4">Reserva o teu lugar</p>
-          <h2 className="text-6xl md:text-8xl font-body font-extrabold text-white leading-none tracking-tight whitespace-nowrap">Próximas Saídas</h2>
+          <h2 className="text-4xl md:text-8xl font-body font-extrabold text-white leading-none tracking-tight">Próximas Saídas</h2>
         </div>
         <p className="text-white/25 font-body text-sm text-right leading-relaxed hidden md:block">
           Grupos reduzidos.<br />Vagas limitadas.
@@ -519,31 +615,33 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: i * 0.07 }}
-            className="group flex items-center gap-6 bg-white/5 border border-white/[0.07] rounded-2xl px-6 py-5 cursor-pointer hover:bg-white/10 transition-colors duration-300"
+            className="group flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 bg-white/5 border border-white/[0.07] rounded-2xl px-5 py-4 cursor-pointer hover:bg-white/10 transition-colors duration-300"
             onClick={() => onActivity?.((item as any).activityIndex ?? 0)}
           >
             {/* Thumbnail */}
-            <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
+            <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl overflow-hidden flex-shrink-0">
               <img src={item.image} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
             </div>
 
-            {/* Location + Title */}
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-white/30 font-body text-[10px] font-bold uppercase tracking-[0.25em] mb-1">{item.location}</span>
-              <span className="text-white font-body font-extrabold text-2xl leading-snug truncate">{item.title}</span>
-            </div>
+            {/* Top row: thumbnail info + date */}
+            <div className="flex items-center gap-4 flex-1 min-w-0 w-full sm:w-auto">
+              {/* Title only */}
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-white font-body font-extrabold text-lg sm:text-2xl leading-snug truncate">{item.title}</span>
+              </div>
 
-            {/* Date + Spots */}
-            <div className="flex flex-col items-end flex-shrink-0 mr-6">
-              <span className="font-body font-bold text-white text-xl leading-none">{item.dateRange}</span>
-              {item.year && <span className="font-body text-xs text-white/30 mt-1">{item.year}</span>}
-              <span className={`font-body text-[10px] font-bold uppercase tracking-[0.15em] mt-2 ${item.urgent ? 'text-neon-yellow' : 'text-white/25'}`}>{item.spots}</span>
+              {/* Date + Spots */}
+              <div className="flex flex-col items-end flex-shrink-0 sm:mr-6">
+                <span className="font-body font-bold text-white text-base sm:text-xl leading-none">{item.dateRange}</span>
+                {item.year && <span className="font-body text-xs text-white/30 mt-1">{item.year}</span>}
+                <span className={`font-body text-[10px] font-bold uppercase tracking-[0.15em] mt-1 ${item.urgent ? 'text-neon-yellow' : 'text-white/25'}`}>{item.spots}</span>
+              </div>
             </div>
 
             {/* CTA */}
             <button
               onClick={e => { e.stopPropagation(); onActivity?.((item as any).activityIndex ?? 0); }}
-              className="flex-shrink-0 bg-white text-brutal-black font-body font-bold text-[11px] uppercase tracking-[0.15em] px-6 py-4 rounded-xl hover:bg-neon-yellow transition-colors duration-300"
+              className="w-full sm:w-auto flex-shrink-0 bg-white text-brutal-black font-body font-bold text-[11px] uppercase tracking-[0.15em] px-6 py-3 sm:py-4 rounded-xl hover:bg-neon-yellow transition-colors duration-300"
             >
               Reservar
             </button>
@@ -556,10 +654,10 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
 
 function OQueNosDiferencia({ onHistoria }: { onHistoria?: () => void }) {
   return (
-    <section id="sobre" className="bg-neon-yellow overflow-hidden px-8 md:px-12 py-14">
+    <section id="sobre" className="bg-neon-yellow overflow-hidden px-4 md:px-12 py-10 md:py-14">
 
       {/* 3-col grid: texto | reel | 2 fotos */}
-      <div className="grid grid-cols-3 gap-4" style={{ height: '1100px' }}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
         {/* COL 1 — título em cima, texto + botão em baixo */}
         <motion.div
@@ -567,14 +665,14 @@ function OQueNosDiferencia({ onHistoria }: { onHistoria?: () => void }) {
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.7 }}
-          className="flex flex-col justify-between py-2 pr-4"
+          className="flex flex-col justify-between py-6 md:py-2 pr-4"
         >
-          <h2 className="text-[clamp(2.2rem,4.2vw,5rem)] font-body font-extrabold text-brutal-black leading-[0.85] tracking-tight">
+          <h2 className="text-[clamp(2.2rem,8vw,5rem)] font-body font-extrabold text-brutal-black leading-[0.85] tracking-tight">
             AVENTURA?<br />
             <em className="italic">É connosco.</em>
           </h2>
-          <div>
-            <p className="text-brutal-black font-body text-xl leading-[1.6] mb-7">
+          <div className="mt-8 md:mt-0">
+            <p className="text-brutal-black font-body text-base md:text-xl leading-[1.6] mb-7">
 Lisboa até ao Qatar à boleia, atravessar os himalaias de scooter, ir de luanda até maputo com um toyota de 1994.. são apenas algumas das aventuras que nós já vivemos.. gostamos de explorar o desconhecido e agora queremos te dar a ti a oportunidade de viveres experiências únicas.            </p>
             <button
               onClick={onHistoria}
@@ -592,7 +690,7 @@ Lisboa até ao Qatar à boleia, atravessar os himalaias de scooter, ir de luanda
           viewport={{ once: true }}
           transition={{ duration: 0.7 }}
           className="rounded-3xl overflow-hidden flex items-center justify-center bg-black"
-          style={{ height: '1100px' }}
+          style={{ height: 'clamp(420px, 80vw, 1100px)' }}
         >
           <video
             autoPlay loop muted playsInline
@@ -602,7 +700,7 @@ Lisboa até ao Qatar à boleia, atravessar os himalaias de scooter, ir de luanda
         </motion.div>
 
         {/* COL 3 — 2 fotos empilhadas */}
-        <div className="flex flex-col gap-4" style={{ height: '1100px' }}>
+        <div className="flex flex-col gap-4" style={{ height: 'clamp(420px, 80vw, 1100px)' }}>
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -729,7 +827,7 @@ function IntroPortugal({ onConquista }: { onConquista?: () => void }) {
           className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 pointer-events-none"
         >
           <p className="text-white/20 font-body text-[10px] uppercase tracking-[0.5em] mb-6">50+ países · 6 continentes</p>
-          <h2 className="text-[clamp(3rem,8vw,9rem)] font-body font-extrabold text-white leading-[0.85] tracking-tight">
+          <h2 className="text-[clamp(2.2rem,8vw,9rem)] font-body font-extrabold text-white leading-[0.85] tracking-tight">
             Já explorámos<br />
             <em className="italic text-white/30">o mundo.</em>
           </h2>
@@ -757,7 +855,7 @@ function IntroPortugal({ onConquista }: { onConquista?: () => void }) {
           </motion.div>
           <h2
             className="font-body font-extrabold text-neon-yellow leading-none tracking-tight text-center px-8"
-            style={{ fontSize: 'clamp(3rem, 8vw, 9rem)' }}
+            style={{ fontSize: 'clamp(1.8rem, 8vw, 9rem)' }}
           >
             Agora queremos<br />mostrar-te Portugal.
           </h2>
@@ -775,7 +873,7 @@ function IntroPortugal({ onConquista }: { onConquista?: () => void }) {
           </div>
 
           {/* Cards — 2 linhas × 3 colunas */}
-          <div className="grid grid-cols-3 gap-2.5 w-full max-w-5xl" style={{ gridTemplateRows: '1fr 1fr', height: 'min(420px, 44vh)' }}>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-2.5 w-full max-w-5xl" style={{ height: 'auto' }}>
             {portugueseSpots.map((spot, i) => (
               <motion.div
                 key={i}
@@ -783,7 +881,7 @@ function IntroPortugal({ onConquista }: { onConquista?: () => void }) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08, duration: 0.5 }}
                 className="group relative rounded-3xl overflow-hidden cursor-pointer"
-                style={{ isolation: 'isolate' }}
+                style={{ isolation: 'isolate', height: 'clamp(160px, 30vw, 240px)' }}
               >
                 <img
                   src={spot.image}
@@ -846,7 +944,7 @@ function AllExperiencesPage({ onBack, onActivity, adventures }: { onBack: () => 
     location: a.location ?? '',
     price: a.price ?? null,
     priceNum: a.price ? parseInt(String(a.price).replace(/[^0-9]/g, ''), 10) || 0 : 0,
-    index: i,
+    index: a.index ?? i,
   })) : originals.map((o, i) => ({ ...o, location: '', price: null, priceNum: 0, index: i })))
     .filter(item => {
       const matchSearch = item.title.toLowerCase().includes(search.toLowerCase());
@@ -876,8 +974,9 @@ function AllExperiencesPage({ onBack, onActivity, adventures }: { onBack: () => 
         <div className="w-16" />
       </div>
 
-      <div className="flex min-h-screen">
-        {/* Sidebar filters */}
+      <div className="flex flex-col md:flex-row min-h-screen">
+
+        {/* Sidebar filters — desktop only */}
         <aside className="hidden md:flex flex-col gap-6 w-64 flex-shrink-0 px-8 pt-12 border-r border-white/[0.06] sticky top-[61px] self-start h-[calc(100vh-61px)] overflow-y-auto">
           <div>
             <p className="text-white/50 font-body text-[10px] uppercase tracking-[0.3em] mb-4">Pesquisar</p>
@@ -928,72 +1027,95 @@ function AllExperiencesPage({ onBack, onActivity, adventures }: { onBack: () => 
           </div>
         </aside>
 
-        {/* Mobile filters */}
-        <div className="md:hidden px-6 pt-6 pb-0 w-full">
-          <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
-            {(['todas', 'disponiveis', 'embreve'] as const).map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={`flex-shrink-0 px-4 py-2 rounded-full font-body text-xs font-medium transition-all ${filter === f ? 'bg-neon-yellow text-brutal-black' : 'bg-white/5 text-white/40 border border-white/10'}`}>
-                {f === 'todas' ? 'Todas' : f === 'disponiveis' ? 'Disponíveis' : 'Em breve'}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Main content column (mobile: full width vertical; desktop: flex-1) */}
+        <div className="flex flex-col flex-1 min-w-0">
 
-        {/* Grid */}
-        <main className="flex-1 px-6 md:px-10 pt-10 pb-24">
-          <div className="mb-8">
-            <h1 className="text-4xl md:text-6xl font-body font-extrabold text-white leading-none tracking-tight">
-              Todas as<br /><span className="text-neon-yellow">Experiências</span>
-            </h1>
-          </div>
-
-          {items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-32 text-white/20">
-              <p className="font-body text-lg">Nenhuma experiência encontrada</p>
+          {/* Mobile sticky filter bar */}
+          <div className="md:hidden sticky top-[61px] z-30 bg-brutal-black/95 backdrop-blur-md border-b border-white/[0.06] px-4 py-3 flex flex-col gap-3">
+            {/* Search */}
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.2"/><path d="M9 9l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              <input
+                type="text"
+                placeholder="Pesquisar experiência..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-4 py-2.5 text-white text-sm font-body placeholder-white/30 focus:outline-none focus:border-neon-yellow/40 transition-colors"
+              />
             </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-              {items.map((item, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 24 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: i * 0.04 }}
-                  onClick={() => onActivity(item.index)}
-                  className="group relative overflow-hidden rounded-2xl cursor-pointer"
-                  style={{ aspectRatio: '2/3' }}
-                >
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                    style={{ filter: 'saturate(1.2) brightness(1.0)' }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
-
-                  {/* Badges */}
-                  <div className="absolute top-3 left-3 flex gap-1.5">
-                    {item.comingSoon && (
-                      <span className="bg-neon-yellow text-brutal-black font-body text-[8px] font-bold uppercase tracking-[0.12em] px-2 py-1 rounded-full">Em breve</span>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="absolute bottom-0 inset-x-0 p-4">
-                    {item.location && <p className="text-white/40 font-body text-[9px] uppercase tracking-[0.2em] mb-1">{item.location}</p>}
-                    <h3 className="text-white font-body font-bold text-base md:text-lg leading-snug group-hover:text-neon-yellow transition-colors duration-300">{item.title}</h3>
-                    {(item as any).price && (
-                      <p className="text-neon-yellow font-body text-sm font-extrabold mt-1.5">{(item as any).price}</p>
-                    )}
-                  </div>
-
-                  <div className="absolute inset-0 rounded-2xl ring-1 ring-white/5 group-hover:ring-neon-yellow/25 transition-all duration-300" />
-                </motion.div>
+            {/* Filter + sort pills */}
+            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              {(['todas', 'disponiveis', 'embreve'] as const).map(f => (
+                <button key={f} onClick={() => setFilter(f)}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full font-body text-xs font-semibold transition-all ${filter === f ? 'bg-neon-yellow text-brutal-black' : 'bg-white/5 text-white/50 border border-white/10'}`}>
+                  {f === 'todas' ? 'Todas' : f === 'disponiveis' ? 'Disponíveis' : 'Em breve'}
+                </button>
+              ))}
+              <div className="w-px bg-white/10 flex-shrink-0 mx-1" />
+              {([['none', 'Preço'], ['asc', 'Preço ↑'], ['desc', 'Preço ↓']] as const).map(([val, label]) => (
+                <button key={val} onClick={() => setPriceSort(val)}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full font-body text-xs font-semibold transition-all ${priceSort === val ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 border border-white/10'}`}>
+                  {label}
+                </button>
               ))}
             </div>
-          )}
-        </main>
+          </div>
+
+          {/* Grid */}
+          <main className="px-4 md:px-10 pt-8 pb-24">
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-4xl md:text-6xl font-body font-extrabold text-white leading-none tracking-tight">
+                Todas as<br /><span className="text-neon-yellow">Experiências</span>
+              </h1>
+              <p className="text-white/30 font-body text-xs mt-2">{items.length} experiência{items.length !== 1 ? 's' : ''}</p>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-32 text-white/20">
+                <p className="font-body text-lg">Nenhuma experiência encontrada</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+                {items.map((item, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 24 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: i * 0.04 }}
+                    onClick={() => onActivity(item.index)}
+                    className="group relative overflow-hidden rounded-2xl cursor-pointer"
+                    style={{ aspectRatio: '2/3' }}
+                  >
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      style={{ filter: 'saturate(1.2) brightness(1.0)' }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
+
+                    {/* Badges */}
+                    <div className="absolute top-3 left-3 flex gap-1.5">
+                      {item.comingSoon && (
+                        <span className="bg-neon-yellow text-brutal-black font-body text-[8px] font-bold uppercase tracking-[0.12em] px-2 py-1 rounded-full">Em breve</span>
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="absolute bottom-0 inset-x-0 p-3 md:p-4">
+                      <h3 className="text-white font-body font-bold text-sm md:text-lg leading-snug group-hover:text-neon-yellow transition-colors duration-300">{item.title}</h3>
+                      {(item as any).price && (
+                        <p className="text-neon-yellow font-body text-xs md:text-sm font-extrabold mt-1">{(item as any).price}</p>
+                      )}
+                    </div>
+
+                    <div className="absolute inset-0 rounded-2xl ring-1 ring-white/5 group-hover:ring-neon-yellow/25 transition-all duration-300" />
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </main>
+        </div>
       </div>
     </div>
   );
@@ -1032,7 +1154,7 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
           >A nossa história</motion.p>
           <motion.h1
             initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.4 }}
-            className="text-[clamp(3.5rem,9vw,9rem)] font-body font-extrabold text-white leading-[0.85] tracking-tight"
+            className="text-[clamp(2.5rem,9vw,9rem)] font-body font-extrabold text-white leading-[0.85] tracking-tight"
           >
             Nascemos<br />do cansaço<br />
             <em className="not-italic text-neon-yellow">do conforto.</em>
@@ -1057,12 +1179,12 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
       {/* ── FULL SCREEN: foto esquerda + texto direita ── */}
       <div className="relative w-full min-h-screen overflow-hidden flex flex-col md:flex-row">
         {/* Left — full-height image */}
-        <div className="relative w-full md:w-1/2 min-h-[60vw] md:min-h-screen overflow-hidden">
+        <div className="relative w-full md:w-1/2 overflow-hidden" style={{ minHeight: 'clamp(420px, 100vw, 600px)' }}>
           <motion.img
             src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/DSC08797%202.JPG"
             alt=""
             initial={{ scale: 1.05 }} whileInView={{ scale: 1 }} viewport={{ once: true }} transition={{ duration: 1.4, ease: 'easeOut' }}
-            className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 30%' }}
+            className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 15%' }}
           />
         </div>
         {/* Right — text */}
@@ -2735,7 +2857,7 @@ function Footer() {
       <div className="relative z-20 w-full flex flex-col justify-end px-8 md:px-16 pb-10 pt-40">
 
         {/* Main content row */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 mb-10 border-b border-white/15 pb-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-10 mb-10 border-b border-white/15 pb-10 text-center md:text-left items-center md:items-end">
           {/* Left — brand + tagline */}
           <div className="flex flex-col gap-4">
             <h2 className="text-3xl md:text-5xl leading-[0.95] font-body font-extrabold text-white tracking-tight">
@@ -2744,7 +2866,7 @@ function Footer() {
           </div>
 
           {/* Middle — nav links */}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 items-center md:items-start">
             <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.3em] mb-2 font-bold">Explorar</p>
             {[['Ver experiências', '#originals'], ['Próximas saídas', '#saidas'], ['Sobre nós', '#sobre'], ['FAQ', '#faq']].map(([label, href]) => (
               <a key={label} href={href} className="text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">{label}</a>
@@ -2752,7 +2874,7 @@ function Footer() {
           </div>
 
           {/* Right — partners */}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 items-center md:items-start">
             <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.3em] mb-2 font-bold">Parcerias</p>
             {partners.map(p => (
               <button key={p.key} onClick={() => setPartner(p.key)}
@@ -2762,8 +2884,7 @@ function Footer() {
             ))}
           </div>
 
-          {/* Far right — social */}
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 items-center md:items-start">
             <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.3em] mb-1 font-bold">Redes sociais</p>
             <div className="flex gap-2">
               <motion.a href="#" whileHover={{ scale: 1.12 }} className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white/70 hover:border-neon-yellow/70 hover:text-neon-yellow transition-all">
@@ -2780,7 +2901,7 @@ function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-3 text-white/40 font-body text-xs uppercase tracking-widest">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-3 text-white/40 font-body text-xs uppercase tracking-widest text-center">
           <p>&copy; {new Date().getFullYear()} Bored Originals</p>
           <div className="flex gap-5">
             <a href="#" className="hover:text-white transition-colors">Política de Privacidade</a>
@@ -3098,7 +3219,7 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
         <div className="absolute inset-0 flex flex-col items-center justify-end pb-20 px-6 text-center z-10">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, delay: 0.2 }}>
             <p className="text-white/40 font-body text-[10px] uppercase tracking-[0.35em] mb-5">{data.location}</p>
-            <h1 className="text-[clamp(4rem,10vw,10rem)] font-body font-extrabold text-white leading-[0.82] tracking-tight mb-10">
+            <h1 className="text-[clamp(2.8rem,10vw,10rem)] font-body font-extrabold text-white leading-[0.82] tracking-tight mb-10">
               {data.title}
             </h1>
             <div className="flex flex-wrap justify-center gap-3">
@@ -3113,13 +3234,13 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
       </div>
 
       {/* ── INTRO — texto esquerda + vídeo direita ── */}
-      <div className="border-b border-white/6 px-10 md:px-20 py-24">
+      <div className="border-b border-white/6 px-6 md:px-20 py-16 md:py-24">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-16 items-center">
           {/* Esquerda — label + título + descrição + botões */}
           <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="flex flex-col gap-8">
             <div>
               <p className="text-white/25 font-body text-[10px] uppercase tracking-[0.4em] mb-6">A aventura</p>
-              <h2 className="text-[clamp(2.8rem,4.5vw,5.5rem)] font-body font-extrabold text-white leading-[0.88] tracking-tight mb-8">
+              <h2 className="text-[clamp(2rem,4.5vw,5.5rem)] font-body font-extrabold text-white leading-[0.88] tracking-tight mb-8">
                 {data.tagline}
               </h2>
               <p className="text-white/50 text-lg leading-[1.85]">{data.description}</p>
@@ -3152,51 +3273,68 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
       </div>
 
       {/* ── DATAS / EDIÇÕES ── */}
-      <div ref={tabsRef} className="px-10 md:px-20 py-28 border-b border-white/6">
+      <div ref={tabsRef} className="px-4 md:px-20 py-16 md:py-28 border-b border-white/6">
         <div className="mb-14 text-center">
           <p className="text-white/25 font-body text-[10px] uppercase tracking-[0.4em] mb-4">Disponibilidade</p>
-          <h3 className="text-5xl md:text-7xl font-body font-extrabold text-white leading-none tracking-tight">Escolhe a tua edição</h3>
+          <h3 className="text-4xl md:text-7xl font-body font-extrabold text-white leading-none tracking-tight">Escolhe a tua edição</h3>
         </div>
         <div className="flex flex-col gap-3 max-w-4xl mx-auto">
           {bookingDate && <BookingModal date={bookingDate} activityTitle={data.title} onClose={() => setBookingDate(null)} />}
-          {dates.map((d: any, i: number) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 12 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.07 }}
-              className="flex items-center justify-between bg-white/4 border border-white/8 rounded-2xl px-8 py-6 hover:border-white/15 transition-colors"
-            >
-              <span className="text-white font-body font-bold text-2xl">{d.date_range ?? d.range}</span>
-              <div className="flex items-center gap-8">
-                <span className={`font-body text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full ${
-                  d.status === 'disponivel' ? 'bg-green-500/15 text-green-400' :
-                  d.status === 'apreencher' ? 'bg-neon-yellow/15 text-neon-yellow' :
-                  'bg-red-500/15 text-red-400'
-                }`}>
-                  {d.status === 'disponivel' ? 'Disponível' : d.status === 'apreencher' ? 'A preencher' : 'Esgotado'}
-                </span>
-                <div className="text-right">
-                  <p className="text-white font-body font-extrabold text-2xl leading-none">{d.price}</p>
-                  <p className={`text-xs mt-1 font-body ${d.status === 'apreencher' ? 'text-neon-yellow font-bold' : 'text-white/30'}`}>
-                    {d.status === 'apreencher' ? `Últimas ${d.spots}!` : `${d.spots} vagas`}
-                  </p>
-                </div>
-                {d.status !== 'esgotado' ? (
-                  <button
-                    onClick={() => setBookingDate({ id: d.id, date_range: d.date_range ?? d.range, status: d.status, spots: d.spots, price: d.price })}
-                    className={`font-body font-bold text-[11px] uppercase tracking-[0.15em] px-6 py-3 rounded-xl transition-colors duration-300 whitespace-nowrap ${
-                      d.status === 'disponivel' ? 'bg-neon-yellow text-brutal-black hover:bg-white' : 'bg-white/10 text-white hover:bg-white/20'
-                    }`}>
-                    {d.status === 'disponivel' ? 'Reservar lugar' : 'Entrar na lista'}
-                  </button>
-                ) : (
-                  <span className="text-white/25 font-body text-xs uppercase tracking-widest px-6">Esgotado</span>
+          {dates.map((d: any, i: number) => {
+            const isAvailable = d.status === 'disponivel';
+            const isFilling = d.status === 'apreencher';
+            const isSoldOut = d.status === 'esgotado';
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 12 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.4, delay: i * 0.07 }}
+                className={`relative overflow-hidden rounded-2xl border transition-colors ${isFilling ? 'border-neon-yellow/30 bg-neon-yellow/5' : 'border-white/8 bg-white/4 hover:border-white/15'}`}
+              >
+                {/* Urgency bar */}
+                {isFilling && (
+                  <div className="h-[2px] w-full bg-gradient-to-r from-neon-yellow to-neon-yellow/40" />
                 )}
-              </div>
-            </motion.div>
-          ))}
+
+                <div className="px-5 md:px-8 py-5 md:py-6">
+                  {/* Row 1: date + status badge */}
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-white font-body font-extrabold text-xl md:text-2xl leading-none">{d.date_range ?? d.range}</span>
+                    <span className={`font-body text-[9px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full ${
+                      isAvailable ? 'bg-green-500/15 text-green-400' :
+                      isFilling   ? 'bg-neon-yellow/20 text-neon-yellow' :
+                                    'bg-red-500/15 text-red-400'
+                    }`}>
+                      {isAvailable ? 'Disponível' : isFilling ? 'A preencher' : 'Esgotado'}
+                    </span>
+                  </div>
+
+                  {/* Row 2: price + spots + CTA */}
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-white font-body font-extrabold text-3xl leading-none">{d.price}</p>
+                      <p className={`text-xs mt-1.5 font-body ${isFilling ? 'text-neon-yellow font-bold' : 'text-white/30'}`}>
+                        {isFilling ? `⚡ Últimas ${d.spots} vagas` : `${d.spots} vagas disponíveis`}
+                      </p>
+                    </div>
+                    {!isSoldOut ? (
+                      <button
+                        onClick={() => setBookingDate({ id: d.id, date_range: d.date_range ?? d.range, status: d.status, spots: d.spots, price: d.price })}
+                        className={`flex-shrink-0 font-body font-bold text-[11px] uppercase tracking-[0.15em] px-6 py-3.5 rounded-xl transition-colors duration-300 whitespace-nowrap ${
+                          isAvailable ? 'bg-neon-yellow text-brutal-black hover:bg-white' : 'bg-white/10 text-white hover:bg-white/20'
+                        }`}>
+                        {isAvailable ? 'Reservar lugar' : 'Entrar na lista'}
+                      </button>
+                    ) : (
+                      <span className="text-white/20 font-body text-xs uppercase tracking-widest">Esgotado</span>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
         <p className="text-white/20 text-xs text-center mt-8 font-body">Reserva com apenas 50€ de depósito · Pagamento total até 30 dias antes da saída</p>
       </div>
@@ -3322,12 +3460,13 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
       </div>
 
       {/* ── STICKY TAB MENU ── */}
-      {/* ── STICKY TAB MENU ── */}
-      <div className="sticky top-0 z-40 mt-24" style={{ background: 'rgba(8,8,8,0.98)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }}>
+      <div className="sticky top-0 z-40 mt-24 relative" style={{ background: 'rgba(8,8,8,0.98)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }}>
         {/* top accent line */}
         <div style={{ height: 2, background: 'linear-gradient(90deg, transparent 0%, #FFE600 20%, #FFE600 80%, transparent 100%)' }} />
+        {/* Right fade hint — only on mobile */}
+        <div className="pointer-events-none absolute right-0 top-[2px] bottom-0 w-16 md:hidden z-10" style={{ background: 'linear-gradient(to left, rgba(8,8,8,0.98) 30%, transparent 100%)' }} />
         <div className="overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-          <div className="flex justify-center whitespace-nowrap" style={{ padding: '0 24px' }}>
+          <div className="flex md:justify-center whitespace-nowrap min-w-max md:min-w-0 mx-auto" style={{ padding: '0 16px' }}>
             {tabs.map(tab => {
               const icons: Record<string, string> = {
                 inclui: '✦',
@@ -3343,7 +3482,7 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
                   onClick={() => setActiveTab(tab.id)}
                   className="relative flex flex-col items-center gap-1.5 transition-all duration-300"
                   style={{
-                    padding: '22px 36px 18px',
+                    padding: 'clamp(14px, 3vw, 22px) clamp(16px, 4vw, 36px) 18px',
                     color: isActive ? '#FFE600' : 'rgba(255,255,255,0.35)',
                     borderBottom: isActive ? '2px solid #FFE600' : '2px solid transparent',
                     marginBottom: -1,
@@ -3883,85 +4022,99 @@ function ApoioPage({ onBack }: { onBack: () => void }) {
   );
 }
 
-export default function App() {
-  const [page, setPage] = useState<'home' | 'conquista' | 'historia' | 'activity' | 'payment-success' | 'apoio'>(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('payment') === 'success') return 'payment-success';
-    return 'home';
-  });
-  const [activeActivity, setActiveActivity] = useState<number>(0);
+function ActivityRoute({ adventures }: { adventures: any[] }) {
+  const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
+
+  const activityIndex = useMemo(() => {
+    if (!slug) return 0;
+    if (adventures.length === 0) return 0;
+    const found = adventures.find((a: any) => slugify(a.title) === slug);
+    return found ? (found.index ?? 0) : parseInt(slug) || 0;
+  }, [slug, adventures]);
+
+  if (adventures.length === 0) {
+    return (
+      <div className="fixed inset-0 z-[999] bg-brutal-black flex flex-col items-center justify-center gap-6">
+        <div className="w-10 h-10 rounded-full border-2 border-white/10 border-t-neon-yellow animate-spin" />
+        <p className="text-white/30 font-body text-xs uppercase tracking-[0.3em]">A carregar</p>
+      </div>
+    );
+  }
+
+  return <ActivityPage activityIndex={activityIndex} onBack={() => navigate(-1 as any)} />;
+}
+
+function AppRoutes() {
+  const navigate = useNavigate();
   const [dbAdventures, setDbAdventures] = useState<any[]>([]);
 
   useEffect(() => {
-    getAdventures().then(data => setDbAdventures(data)).catch(console.error);
+    getAdventures().then(setDbAdventures).catch(console.error);
+    // Handle legacy ?payment=success query
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') === 'success') navigate('/pagamento-confirmado');
   }, []);
 
-  const goToConquista = () => {
-    setPage('conquista');
+  const goToActivity = useCallback((index: number) => {
+    const adv = dbAdventures.find((a: any) => (a.index ?? 0) === index);
+    const slug = adv ? slugify(adv.title) : String(index);
+    navigate(`/actividade/${slug}`);
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [dbAdventures, navigate]);
+
+  const nav = {
+    toHome:           () => { navigate('/');               window.scrollTo({ top: 0, behavior: 'instant' }); },
+    toAllExperiences: () => { navigate('/experiencias');   window.scrollTo({ top: 0, behavior: 'instant' }); },
+    toHistoria:       () => { navigate('/sobre-nos');      window.scrollTo({ top: 0, behavior: 'instant' }); },
+    toApoio:          () => { navigate('/apoio');          window.scrollTo({ top: 0, behavior: 'instant' }); },
+    toConquista:      () => { navigate('/conquista');      window.scrollTo({ top: 0, behavior: 'instant' }); },
+    back:             () => navigate(-1 as any),
   };
 
-  const goToActivity = (index: number) => {
-    setActiveActivity(index);
-    setPage('activity');
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  };
-
-  const goToHistoria = () => {
-    setPage('historia');
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  };
-
-  const goToApoio = () => {
-    setPage('apoio');
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  };
-
-  const goHome = () => {
-    setPage('home');
-    window.history.replaceState({}, '', window.location.pathname);
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  };
-
-  const goToAllExperiences = () => {
-    setPage('all-experiences');
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  };
-
-  if (page === 'payment-success') {
-    return <PaymentSuccessPage onHome={goHome} />;
-  }
-
-  if (page === 'all-experiences') {
-    return <AllExperiencesPage onBack={goHome} onActivity={goToActivity} adventures={dbAdventures} />;
-  }
-
-  if (page === 'conquista') {
-    return <ConquistaPage onBack={goHome} />;
-  }
-
-  if (page === 'activity') {
-    return <ActivityPage activityIndex={activeActivity} onBack={goHome} />;
-  }
-
-  if (page === 'historia') {
-    return <NossaHistoriaPage onBack={goHome} />;
-  }
-
-  if (page === 'apoio') {
-    return <ApoioPage onBack={goHome} />;
-  }
+  const sharedNavbar = (
+    <Navbar
+      onConquista={nav.toConquista}
+      onHistoria={nav.toHistoria}
+      onHome={nav.toHome}
+      onApoio={nav.toApoio}
+      onAllExperiences={nav.toAllExperiences}
+    />
+  );
 
   return (
-    <div className="min-h-screen bg-brutal-black selection:bg-neon-yellow selection:text-brutal-black">
-      <Navbar onConquista={goToConquista} onHistoria={goToHistoria} onHome={goHome} onApoio={goToApoio} onAllExperiences={goToAllExperiences} />
-      <Hero />
-      <BoredOriginals onConquista={goToConquista} onActivity={goToActivity} onAllExperiences={goToAllExperiences} adventures={dbAdventures} />
-      <ProximasSaidas onConquista={goToConquista} onActivity={goToActivity} dbAdventures={dbAdventures} />
-      <OQueNosDiferencia onHistoria={goToHistoria} />
-      <IntroPortugal onConquista={goToConquista} />
+    <Routes>
+      <Route path="/" element={
+        <div className="min-h-screen bg-brutal-black selection:bg-neon-yellow selection:text-brutal-black">
+          {sharedNavbar}
+          <Hero />
+          <BoredOriginals onConquista={nav.toConquista} onActivity={goToActivity} onAllExperiences={nav.toAllExperiences} adventures={dbAdventures} />
+          <ProximasSaidas onConquista={nav.toConquista} onActivity={goToActivity} dbAdventures={dbAdventures} />
+          <OQueNosDiferencia onHistoria={nav.toHistoria} />
+          <IntroPortugal onConquista={nav.toConquista} />
+          <Footer />
+        </div>
+      } />
+      <Route path="/experiencias" element={<AllExperiencesPage onBack={nav.back} onActivity={goToActivity} adventures={dbAdventures} />} />
+      <Route path="/sobre-nos" element={<NossaHistoriaPage onBack={nav.back} />} />
+      <Route path="/apoio" element={<ApoioPage onBack={nav.back} />} />
+      <Route path="/conquista" element={<ConquistaPage onBack={nav.back} />} />
+      <Route path="/actividade/:slug" element={<ActivityRoute adventures={dbAdventures} />} />
+      <Route path="/pagamento-confirmado" element={<PaymentSuccessPage onHome={nav.toHome} />} />
+      <Route path="*" element={
+        <div className="min-h-screen bg-brutal-black flex flex-col items-center justify-center gap-4">
+          <p className="text-white/30 font-body text-xs uppercase tracking-[0.3em]">404 — Página não encontrada</p>
+          <button onClick={nav.toHome} className="bg-neon-yellow text-brutal-black font-body font-bold text-xs uppercase tracking-widest px-6 py-3 rounded-xl">Voltar ao início</button>
+        </div>
+      } />
+    </Routes>
+  );
+}
 
-      <Footer />
-    </div>
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
