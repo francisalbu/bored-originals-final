@@ -13,7 +13,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '');
 
-function Navbar({ onConquista, onHistoria, onHome, onApoio }: { onConquista?: () => void; onHistoria?: () => void; onHome?: () => void; onApoio?: () => void }) {
+function Navbar({ onConquista, onHistoria, onHome, onApoio, onAllExperiences }: { onConquista?: () => void; onHistoria?: () => void; onHome?: () => void; onApoio?: () => void; onAllExperiences?: () => void }) {
   return (
     <motion.nav
       initial={{ y: -20, opacity: 0 }}
@@ -24,7 +24,7 @@ function Navbar({ onConquista, onHistoria, onHome, onApoio }: { onConquista?: ()
       <div className="pointer-events-auto flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent backdrop-blur-0 px-8 md:px-14 py-5">
         {/* Left links */}
         <div className="hidden md:flex items-center gap-10">
-          <a href="#originals" className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Experiências</a>
+          <button onClick={onAllExperiences} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Experiências</button>
         </div>
 
         {/* Center logo */}
@@ -40,9 +40,9 @@ function Navbar({ onConquista, onHistoria, onHome, onApoio }: { onConquista?: ()
         <div className="hidden md:flex items-center gap-10">
           <button onClick={onHistoria} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Sobre Nós</button>
           <button onClick={onApoio} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Apoio</button>
-          <button onClick={onConquista} className="bg-neon-yellow text-brutal-black px-5 py-2 text-sm font-body font-bold uppercase tracking-[0.12em] rounded-lg hover:bg-white transition-colors duration-300">
+          <a href="#proximas-saidas" className="bg-neon-yellow text-brutal-black px-5 py-2 text-sm font-body font-bold uppercase tracking-[0.12em] rounded-lg hover:bg-white transition-colors duration-300">
             Reservar
-          </button>
+          </a>
         </div>
 
         {/* Mobile: logo left + reservar right */}
@@ -54,9 +54,9 @@ function Navbar({ onConquista, onHistoria, onHome, onApoio }: { onConquista?: ()
               className="h-9 w-auto"
             />
           </button>
-          <button onClick={onConquista} className="bg-neon-yellow text-brutal-black px-4 py-1.5 text-xs font-body font-bold uppercase tracking-[0.1em] rounded-lg">
+          <a href="#proximas-saidas" className="bg-neon-yellow text-brutal-black px-4 py-1.5 text-xs font-body font-bold uppercase tracking-[0.1em] rounded-lg">
             Reservar
-          </button>
+          </a>
         </div>
       </div>
     </motion.nav>
@@ -381,19 +381,14 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
                     <p className="text-white/55 font-body text-xs leading-relaxed mb-4 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">
                       {item.desc}
                     </p>
-                    {!item.comingSoon && (
-                      <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-150">
+                    <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-150">
                         <button onClick={e => { e.stopPropagation(); onActivity?.(i); }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
-                          Reservar
+                          {item.comingSoon ? 'Entrar na lista' : 'Reservar'}
                         </button>
                         <button onClick={e => { e.stopPropagation(); onActivity?.(i); }} className="border border-white/20 text-white/60 px-4 py-2 text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-xl hover:border-white/60 hover:text-white transition-colors">
                           Saber mais
                         </button>
                       </div>
-                    )}
-                    {item.comingSoon && (
-                      <p className="text-white/30 font-body text-[10px] uppercase tracking-[0.2em] opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-150">A caminho — fica atento</p>
-                    )}
                   </div>
                 </div>
               </div>
@@ -503,7 +498,7 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
   const items = fromDb.length > 0 ? fromDb : proximasSaidas;
 
   return (
-    <section className="bg-brutal-black min-h-screen flex flex-col justify-center py-20 px-6 md:px-20">
+    <section id="proximas-saidas" className="bg-brutal-black min-h-screen flex flex-col justify-center py-20 px-6 md:px-20">
       {/* Header */}
       <div className="max-w-5xl mx-auto w-full mb-14 flex items-end justify-between">
         <div>
@@ -3959,7 +3954,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-brutal-black selection:bg-neon-yellow selection:text-brutal-black">
-      <Navbar onConquista={goToConquista} onHistoria={goToHistoria} onHome={goHome} onApoio={goToApoio} />
+      <Navbar onConquista={goToConquista} onHistoria={goToHistoria} onHome={goHome} onApoio={goToApoio} onAllExperiences={goToAllExperiences} />
       <Hero />
       <BoredOriginals onConquista={goToConquista} onActivity={goToActivity} onAllExperiences={goToAllExperiences} adventures={dbAdventures} />
       <ProximasSaidas onConquista={goToConquista} onActivity={goToActivity} dbAdventures={dbAdventures} />
