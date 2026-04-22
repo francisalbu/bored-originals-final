@@ -35,14 +35,13 @@ function Navbar({ onConquista, onHistoria, onHome, onApoio, onAllExperiences }: 
         <div className="pointer-events-auto flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent backdrop-blur-0 px-8 md:px-14 py-5">
           {/* Left links — desktop only */}
           <div className="hidden md:flex items-center gap-10">
-            <button onClick={onAllExperiences} className="text-white font-body text-base font-semibold tracking-[0.1em] uppercase hover:text-neon-yellow transition-colors duration-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">Experiências</button>
           </div>
 
           {/* Center logo — desktop only */}
           <button onClick={onHome} className="hidden md:block absolute left-1/2 -translate-x-1/2 focus:outline-none">
             <img
               src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png"
-              alt="Bored Originals"
+              alt="Bored Originals."
               className="h-14 w-auto drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)] hover:opacity-80 transition-opacity duration-200"
             />
           </button>
@@ -394,9 +393,9 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
           className="flex flex-col md:flex-row md:items-end justify-between gap-6"
         >
           <div>
-            <p className="text-white/25 font-body text-[10px] uppercase tracking-[0.4em] mb-4">As nossas experiências</p>
+            <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.4em] mb-4">As nossas experiências</p>
             <h2 className="text-4xl md:text-7xl font-body font-bold text-white leading-[0.9]">
-              Bored<br/><span className="text-neon-yellow">Originals</span>
+              Bored<br/><span className="text-neon-yellow">Originals.</span>
             </h2>
           </div>
           <div className="flex flex-col gap-3 md:items-end">
@@ -405,7 +404,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
               onClick={() => scrollRef.current?.scrollBy({ left: 480, behavior: 'smooth' })}
               className="flex items-center gap-3 text-white/30 hover:text-white transition-colors duration-300 group/arrow"
             >
-              <span className="font-body text-[10px] uppercase tracking-widest">Arrasta para explorar</span>
+              <span className="font-body text-[10px] uppercase tracking-widest text-white/70">Arrasta para explorar</span>
               <div className="w-9 h-9 rounded-full border border-white/15 group-hover/arrow:border-neon-yellow/60 flex items-center justify-center transition-colors duration-300">
                 <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><path d="M0 5h12M8 1l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </div>
@@ -522,8 +521,9 @@ const proximasSaidas = [
     image: "https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/1.png",
     dateRange: "18–20 Jul",
     year: "2025",
-    spots: "3 VAGAS",
-    urgent: false,
+    spots: "3 lugares disponíveis",
+    urgent: true,
+    spotsCount: 3,
     activityIndex: 0,
   },
   {
@@ -532,8 +532,9 @@ const proximasSaidas = [
     image: "https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/2.png",
     dateRange: "1–3 Ago",
     year: "2025",
-    spots: "5 VAGAS",
+    spots: "5 lugares disponíveis",
     urgent: false,
+    spotsCount: 5,
     activityIndex: 1,
   },
   {
@@ -542,8 +543,9 @@ const proximasSaidas = [
     image: "https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/5.png",
     dateRange: "22–23 Ago",
     year: "2025",
-    spots: "ÚLTIMAS 2!",
+    spots: "2 lugares disponíveis",
     urgent: true,
+    spotsCount: 2,
     activityIndex: 4,
   },
   {
@@ -552,8 +554,9 @@ const proximasSaidas = [
     image: "https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/13.png",
     dateRange: "5–7 Set",
     year: "2025",
-    spots: "6 VAGAS",
+    spots: "6 lugares disponíveis",
     urgent: false,
+    spotsCount: 6,
     activityIndex: 11,
   },
   {
@@ -562,8 +565,9 @@ const proximasSaidas = [
     image: "https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/11.png",
     dateRange: "10–20 Out",
     year: "2025",
-    spots: "4 VAGAS",
+    spots: "4 lugares disponíveis",
     urgent: false,
+    spotsCount: 4,
     activityIndex: 9,
   },
 ];
@@ -584,8 +588,9 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
           image: a.hero_image,
           dateRange: d.date_range,
           year: '',
-          spots: d.spots ? `${d.spots} vagas` : '',
-          urgent: d.status === 'apreencher',
+          spots: d.spots != null ? `${d.spots} lugares disponíveis` : '',
+          spotsCount: d.spots != null ? Number(d.spots) : null,
+          urgent: d.status === 'apreencher' || (d.spots != null && Number(d.spots) < 4),
           activityIndex: a.index ?? 0,
           _dateNum: parseDateRangeToNum(d.date_range),
         }))
@@ -634,7 +639,11 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
               <div className="flex flex-col items-end flex-shrink-0 sm:mr-6">
                 <span className="font-body font-bold text-white text-base sm:text-xl leading-none">{item.dateRange}</span>
                 {item.year && <span className="font-body text-xs text-white/30 mt-1">{item.year}</span>}
-                <span className={`font-body text-[10px] font-bold uppercase tracking-[0.15em] mt-1 ${item.urgent ? 'text-neon-yellow' : 'text-white/25'}`}>{item.spots}</span>
+                <span className={`font-body text-[10px] font-bold uppercase tracking-[0.15em] mt-1 ${
+                  (item as any).spotsCount != null && (item as any).spotsCount < 4
+                    ? 'text-neon-yellow'
+                    : item.urgent ? 'text-neon-yellow' : 'text-white/25'
+                }`}>{item.spots}</span>
               </div>
             </div>
 
@@ -1274,7 +1283,7 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
         <motion.p
           initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.8 }}
           className="text-white/20 font-body text-[10px] uppercase tracking-[0.5em] max-w-xs"
-        >Bored Originals · Portugal · {new Date().getFullYear()}</motion.p>
+        >Bored Originals. · Portugal · {new Date().getFullYear()}</motion.p>
         <motion.button
           initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
           onClick={onBack}
@@ -1589,11 +1598,13 @@ interface HolderForm {
 }
 const emptyHolder = (): HolderForm => ({ name: '', email: '', phone: '', address: '', needsTransfer: false });
 
-function BookingModal({ date, activityTitle, bookingType = 'standard', onClose }: {
+function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, activityImage, activityLocation }: {
   date: { id: string; date_range: string; status: string; spots: number; price: string } | null;
   activityTitle?: string;
   bookingType?: 'vespa' | 'standard';
   onClose: () => void;
+  activityImage?: string;
+  activityLocation?: string;
 }) {
   const [step, setStep] = useState(1);
   const [people, setPeople] = useState(1);
@@ -1700,41 +1711,48 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose }
     ? holders.slice(0, vespas).every(h => h.name && h.email && h.phone)
     : holders[0].name !== '' && holders[0].email !== '' && holders[0].phone !== '';
 
+  const currentTotal = bookingType === 'vespa' ? total : standardTotal;
+  const effectiveStep = step === 4 ? 3 : step;
+
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={e => e.target === e.currentTarget && onClose()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] bg-brutal-black overflow-y-auto"
     >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 24 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-lg max-h-[92vh] overflow-y-auto"
-      >
-        {/* Header */}
-        <div className="sticky top-0 bg-[#111]/95 backdrop-blur-sm border-b border-white/8 px-6 py-5 flex items-center justify-between rounded-t-3xl z-10">
-          <div>
-            <p className="text-white/30 text-[10px] uppercase tracking-widest mb-2">{date.date_range}</p>
-            {!paymentSuccess && (
-              <div className="flex items-center gap-2">
-                {[1,2,3].map(s => (
-                  <div key={s} className="flex items-center gap-2">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${step >= s ? 'bg-neon-yellow text-black' : 'bg-white/10 text-white/30'}`}>{s}</div>
-                    <span className={`text-[10px] uppercase tracking-wider hidden sm:block transition-colors ${step === s ? 'text-white' : 'text-white/25'}`}>
-                      {s === 1 ? 'Grupo' : s === 2 ? 'Dados' : step <= 3 ? 'Confirmação' : 'Pagamento'}
-                    </span>
-                    {s < 3 && <div className={`w-5 h-px mx-1 transition-colors ${step > s ? 'bg-neon-yellow/40' : 'bg-white/10'}`} />}
-                  </div>
-                ))}
-              </div>
-            )}
-            {paymentSuccess && <p className="text-neon-yellow text-xs uppercase tracking-widest font-bold">Reserva confirmada ✓</p>}
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-white/30 hover:text-white hover:bg-white/10 transition-all text-xl">×</button>
+      {/* ── Top bar ── */}
+      <div className="sticky top-0 z-10 bg-[#080808]/98 backdrop-blur-xl border-b border-white/[0.07] px-6 md:px-10 py-4 flex items-center gap-4">
+        <button onClick={onClose} className="flex items-center gap-2 text-white/50 hover:text-white text-xs uppercase tracking-[0.2em] transition-colors flex-shrink-0">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Voltar
+        </button>
+        <div className="flex-1 flex justify-center">
+          <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored." className="h-9 w-auto" />
         </div>
+        {!paymentSuccess ? (
+          <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+            {(['Reserva', 'Dados', 'Pagamento'] as const).map((label, i) => {
+              const sn = i + 1;
+              return (
+                <div key={sn} className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${effectiveStep >= sn ? 'bg-neon-yellow text-black' : 'bg-white/10 text-white/30'}`}>{sn}</div>
+                  <span className={`text-[10px] uppercase tracking-wider transition-colors ${effectiveStep === sn ? 'text-white' : 'text-white/25'}`}>{label}</span>
+                  {sn < 3 && <div className={`w-6 h-px transition-colors ${effectiveStep > sn ? 'bg-neon-yellow/40' : 'bg-white/10'}`} />}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-neon-yellow text-xs uppercase tracking-widest font-bold flex-shrink-0">Confirmada ✓</p>
+        )}
+      </div>
 
-        <div className="px-6 py-7">
+      {/* ── Main 2-col ── */}
+      <div className="max-w-5xl mx-auto px-6 md:px-10 py-10 flex flex-col lg:flex-row gap-10 lg:gap-16 items-start">
+
+        {/* LEFT: form */}
+        <div className="flex-1 min-w-0">
 
           {/* ══════════════════════════════════════════
               STANDARD BOOKING (people-based)
@@ -2153,8 +2171,57 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose }
             </>
           )}
 
+        </div> {/* end left form */}
+
+        {/* RIGHT: Summary */}
+        <div className="w-full lg:w-80 flex-shrink-0">
+          <div className="lg:sticky lg:top-24 space-y-4">
+            <div className="bg-white/[0.04] border border-white/10 rounded-2xl overflow-hidden">
+              {activityImage && (
+                <img src={activityImage} alt={activityTitle ?? ''} className="w-full h-44 object-cover" />
+              )}
+              <div className="p-5 space-y-4">
+                {activityLocation && (
+                  <p className="text-white/30 text-[10px] uppercase tracking-[0.3em]">{activityLocation}</p>
+                )}
+                <h3 className="text-white font-body font-extrabold text-lg leading-tight">{activityTitle}</h3>
+                <div className="border-t border-white/10 pt-4 space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Data</span>
+                    <span className="text-white font-medium">{date.date_range}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Pessoas</span>
+                    <span className="text-white font-medium">{people} pessoa{people > 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex justify-between items-baseline border-t border-white/10 pt-3">
+                    <span className="text-white/40 text-xs uppercase tracking-widest">Total</span>
+                    <span className="text-neon-yellow font-bold text-xl">{currentTotal}€</span>
+                  </div>
+                  <div className="bg-neon-yellow/10 border border-neon-yellow/20 rounded-xl px-4 py-3">
+                    <p className="text-neon-yellow text-xs font-bold uppercase tracking-wider">A pagar agora (50%)</p>
+                    <p className="text-white/30 text-[10px] mt-0.5">Restante {currentTotal - depositAmount}€ antes da saída</p>
+                    <p className="text-neon-yellow font-bold text-2xl mt-2">{depositAmount}€</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              {[
+                'Cancelamento grátis até 30 dias',
+                'Reserva com apenas 50% de sinal',
+                'Pagamento seguro via Stripe',
+              ].map(text => (
+                <div key={text} className="flex items-center gap-3 text-white/40 text-xs">
+                  <span className="text-neon-yellow font-bold text-sm">✓</span>
+                  {text}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      </motion.div>
+
+      </div> {/* end main 2-col */}
     </motion.div>
   );
 }
@@ -2277,7 +2344,7 @@ function ConquistaPage({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="min-h-screen bg-[#f5f0eb] text-[#1a1a1a] font-body">
-      {bookingDate && <BookingModal date={bookingDate} activityTitle={adventureTitle} bookingType="vespa" onClose={() => setBookingDate(null)} />}
+      {bookingDate && <BookingModal date={bookingDate} activityTitle={adventureTitle} bookingType="vespa" activityImage={dbAdv?.hero_image} activityLocation="Belmonte, Beira Interior" onClose={() => setBookingDate(null)} />}
 
       {/* Sticky nav — glass pill like home */}
       <motion.div
@@ -2902,7 +2969,7 @@ function Footer() {
 
         {/* Bottom bar */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-3 text-white/40 font-body text-xs uppercase tracking-widest text-center">
-          <p>&copy; {new Date().getFullYear()} Bored Originals</p>
+          <p>&copy; {new Date().getFullYear()} Bored Original.</p>
           <div className="flex gap-5">
             <a href="#" className="hover:text-white transition-colors">Política de Privacidade</a>
             <a href="#" className="hover:text-white transition-colors">Termos de Sofrimento</a>
@@ -3279,7 +3346,7 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
           <h3 className="text-4xl md:text-7xl font-body font-extrabold text-white leading-none tracking-tight">Escolhe a tua edição</h3>
         </div>
         <div className="flex flex-col gap-3 max-w-4xl mx-auto">
-          {bookingDate && <BookingModal date={bookingDate} activityTitle={data.title} onClose={() => setBookingDate(null)} />}
+          {bookingDate && <BookingModal date={bookingDate} activityTitle={data.title} activityImage={data.heroImage} activityLocation={data.location} onClose={() => setBookingDate(null)} />}
           {dates.map((d: any, i: number) => {
             const isAvailable = d.status === 'disponivel';
             const isFilling = d.status === 'apreencher';
@@ -3460,7 +3527,7 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
       </div>
 
       {/* ── STICKY TAB MENU ── */}
-      <div className="sticky top-0 z-40 mt-24 relative" style={{ background: 'rgba(8,8,8,0.98)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }}>
+      <div className="sticky top-[72px] z-40 mt-24 relative" style={{ background: 'rgba(8,8,8,0.98)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }}>
         {/* top accent line */}
         <div style={{ height: 2, background: 'linear-gradient(90deg, transparent 0%, #FFE600 20%, #FFE600 80%, transparent 100%)' }} />
         {/* Right fade hint — only on mobile */}
@@ -4091,7 +4158,6 @@ function AppRoutes() {
           <BoredOriginals onConquista={nav.toConquista} onActivity={goToActivity} onAllExperiences={nav.toAllExperiences} adventures={dbAdventures} />
           <ProximasSaidas onConquista={nav.toConquista} onActivity={goToActivity} dbAdventures={dbAdventures} />
           <OQueNosDiferencia onHistoria={nav.toHistoria} />
-          <IntroPortugal onConquista={nav.toConquista} />
           <Footer />
         </div>
       } />
