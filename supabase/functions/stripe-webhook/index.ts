@@ -83,14 +83,16 @@ Deno.serve(async (req) => {
     try { holders = JSON.parse(meta.holders || '[]'); } catch { holders = []; }
     const primaryHolder = holders[0] ?? {};
 
+    const isDeposit = meta.bookingType === 'waitlist_deposit';
+
     const { error } = await supabase.from('bookings').insert({
       customer_name: primaryHolder.name || 'Desconhecido',
       customer_email: primaryHolder.email || '',
       customer_phone: primaryHolder.phone || '',
       num_people: parseInt(meta.people || '1'),
       total_price: parseFloat(meta.totalAmount || '0'),
-      deposit_paid: true,
-      payment_status: 'deposit_paid',
+      deposit_paid: isDeposit,
+      payment_status: isDeposit ? 'deposit_paid' : 'paid',
       payment_method: 'stripe',
       status: 'confirmed',
       stripe_session_id: intent.id,
@@ -100,11 +102,33 @@ Deno.serve(async (req) => {
         vespas: parseInt(meta.vespas || '0'),
         holders,
         depositAmount: parseFloat(meta.depositAmount || '0'),
+        bookingType: meta.bookingType || 'full',
       }),
     });
 
     if (error) { console.error('Supabase insert error:', error); return new Response('Database error', { status: 500 }); }
     console.log(`✅ Booking saved for payment intent ${intent.id}`);
+
+    // Decrement available spots
+    const activityDateId = meta.activityDateId;
+    const numPeople = parseInt(meta.people || '1');
+    if (activityDateId) {
+      const { data: dateRow } = await supabase
+        .from('activity_dates')
+        .select('spots')
+        .eq('id', activityDateId)
+        .maybeSingle();
+
+      if (dateRow) {
+        const newSpots = Math.max(0, (dateRow.spots ?? 0) - numPeople);
+        const newStatus = newSpots <= 0 ? 'esgotado' : newSpots <= 4 ? 'apreencher' : 'disponivel';
+        await supabase
+          .from('activity_dates')
+          .update({ spots: newSpots, status: newStatus })
+          .eq('id', activityDateId);
+        console.log(`📉 Spots for date ${activityDateId}: ${dateRow.spots} → ${newSpots} (${newStatus})`);
+      }
+    }
   }
 
   return new Response('ok', { status: 200 });

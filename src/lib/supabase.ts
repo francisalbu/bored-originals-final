@@ -194,3 +194,62 @@ export async function joinNotifyList(adventure_title: string, email: string) {
 
   if (error) throw error;
 }
+
+// ============================================================
+// SITE FAQS (página de Apoio)
+// ============================================================
+
+export type SiteFaqCategory = {
+  id: string;
+  key: string;
+  title: string;
+  icon: string;
+  order_index: number;
+  items: { id: string; question: string; answer: string; order_index: number }[];
+};
+
+// ============================================================
+// WAITLIST
+// ============================================================
+
+export async function addToWaitlist(
+  activityDateId: string,
+  adventureId: string | null,
+  email: string,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('waitlist').insert({
+    activity_date_id: activityDateId,
+    adventure_id: adventureId ?? null,
+    email: email.trim().toLowerCase(),
+  });
+  if (error) {
+    console.error('addToWaitlist error:', error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+// ============================================================
+
+export async function getSiteFaqs(): Promise<SiteFaqCategory[]> {
+  const { data: cats, error: cErr } = await supabase
+    .from('site_faq_categories')
+    .select('*')
+    .order('order_index');
+
+  if (cErr || !cats) return [];
+
+  const { data: faqs, error: fErr } = await supabase
+    .from('site_faqs')
+    .select('*')
+    .order('order_index');
+
+  if (fErr || !faqs) return [];
+
+  return cats.map((cat: any) => ({
+    ...cat,
+    items: faqs
+      .filter((f: any) => f.category_id === cat.id)
+      .sort((a: any, b: any) => a.order_index - b.order_index),
+  }));
+}

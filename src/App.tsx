@@ -5,7 +5,8 @@
 
 import { motion, useScroll, useTransform } from 'motion/react';
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { MouseEvent, FormEvent } from 'react';
 import { MapPin, Flame, Zap, Compass, Tent, Mountain } from 'lucide-react';
 import { getAdventures, getAdventureByIndex } from './lib/supabase';
@@ -23,6 +24,13 @@ function slugify(s: string): string {
 
 function Navbar({ onConquista, onHistoria, onHome, onApoio, onAllExperiences }: { onConquista?: () => void; onHistoria?: () => void; onHome?: () => void; onApoio?: () => void; onAllExperiences?: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   return (
     <>
@@ -30,9 +38,9 @@ function Navbar({ onConquista, onHistoria, onHome, onApoio, onAllExperiences }: 
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
-        className="fixed top-0 left-0 right-0 z-40 pointer-events-none"
+        className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
       >
-        <div className="pointer-events-auto flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent backdrop-blur-0 px-8 md:px-14 py-5">
+        <div className={`pointer-events-auto flex items-center justify-between px-8 md:px-14 py-5 transition-all duration-300 ${scrolled ? 'bg-black/50 backdrop-blur-md border-b border-white/[0.06]' : 'bg-transparent backdrop-blur-0 border-b border-transparent'}`}>
           {/* Left links — desktop only */}
           <div className="hidden md:flex items-center gap-10">
           </div>
@@ -339,26 +347,39 @@ function NotifyModal({ title, onClose }: { title: string; onClose: () => void })
   );
 }
 
-function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures: dbAdventures = [] }: { onConquista?: () => void; onActivity?: (i: number) => void; onAllExperiences?: () => void; adventures?: any[] }) {
+function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, adventures: dbAdventures = [] }: { onConquista?: () => void; onActivity?: (i: number) => void; onBooking?: (i: number) => void; onAllExperiences?: () => void; adventures?: any[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
   const [dragged, setDragged] = useState(false);
   const [notifyItem, setNotifyItem] = useState<string | null>(null);
+  const [quickBooking, setQuickBooking] = useState<{ date: { id: string; date_range: string; status: string; spots: number; price: string }; title: string; image?: string; location?: string } | null>(null);
+
+  const openBooking = (dbIndex: number) => {
+    const adv = dbAdventures.find((a: any) => (a.index ?? 0) === dbIndex);
+    if (!adv) return;
+    const firstDate = (adv.activity_dates ?? []).find((d: any) => d.status !== 'esgotado') ?? adv.activity_dates?.[0];
+    const d = firstDate ?? { id: adv.id, date_range: 'A definir', status: 'disponivel', spots: adv.max_people ?? 10, price: adv.price ?? '0€' };
+    setQuickBooking({ date: { id: d.id, date_range: d.date_range, status: d.status, spots: d.spots, price: d.price }, title: adv.title, image: adv.hero_image, location: adv.location });
+  };
 
   // Usar dados do Supabase se disponíveis, senão fallback para os hardcoded
   const items = dbAdventures.length > 0
-    ? dbAdventures.map((a: any, i: number) => ({
-        title: a.title,
-        desc: a.tagline || a.description,
-        image: a.card_image,
-        hoverVideo: a.hover_video || undefined,
-        comingSoon: a.coming_soon,
-        price: a.price ?? null,
-        _dbIndex: a.index ?? i,
-      }))
-    : originals.map((o, i) => ({ ...o, _dbIndex: i }));
+    ? dbAdventures.map((a: any, i: number) => {
+        const nextDate = (a.activity_dates ?? []).find((d: any) => d.status !== 'esgotado');
+        return {
+          title: a.title,
+          desc: a.tagline || a.description,
+          image: a.card_image,
+          hoverVideo: a.hover_video || undefined,
+          comingSoon: a.coming_soon,
+          price: a.price ?? null,
+          nextDate: nextDate?.date_range ?? null,
+          _dbIndex: a.index ?? i,
+        };
+      })
+    : originals.map((o, i) => ({ ...o, nextDate: null, _dbIndex: i }));
 
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     isDragging.current = true;
@@ -383,6 +404,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
   return (
     <section id="originals" className="bg-brutal-black relative z-10 pt-24 pb-0">
       {notifyItem && <NotifyModal title={notifyItem} onClose={() => setNotifyItem(null)} />}
+      {quickBooking && <BookingModal date={quickBooking.date} activityTitle={quickBooking.title} activityImage={quickBooking.image} activityLocation={quickBooking.location} onClose={() => setQuickBooking(null)} onHome={() => setQuickBooking(null)} />}
       {/* Header */}
       <div className="px-4 md:px-16 pb-12">
         <motion.div
@@ -395,7 +417,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
           <div>
             <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.4em] mb-4">As nossas experiências</p>
             <h2 className="text-4xl md:text-7xl font-body font-bold text-white leading-[0.9]">
-              Bored<br/><span className="text-neon-yellow">Originals.</span>
+              Bored.<br/><span className="text-neon-yellow">Originals</span>
             </h2>
           </div>
           <div className="flex flex-col gap-3 md:items-end">
@@ -431,7 +453,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: i * 0.08 }}
-              onClick={() => { if (!dragged) { onActivity?.((item as any)._dbIndex ?? i); } }}
+              onClick={(e) => { if (!dragged && !(e.target as HTMLElement).closest('button')) { onActivity?.((item as any)._dbIndex ?? i); } }}
               className="group relative flex-shrink-0 overflow-hidden rounded-3xl"
               style={{ width: 'clamp(260px, 72vw, 520px)', aspectRatio: (item as any).cardAspectRatio ?? '2/3', pointerEvents: dragged ? 'none' : 'auto', cursor: 'pointer' }}
             >
@@ -455,7 +477,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
               {/* Gradient overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/5 to-transparent"></div>
 
-              {/* Price tag */}
+              {/* Price tag — top left */}
               {(item as any).price && (
                 <div className="absolute top-6 left-6">
                   <span className="bg-neon-yellow text-brutal-black font-body text-sm font-extrabold tracking-tight px-4 py-2 rounded-full shadow-lg">
@@ -463,6 +485,12 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
                   </span>
                 </div>
               )}
+              {/* Date — top right */}
+              <div className="absolute top-6 right-6">
+                <span className="bg-white/15 backdrop-blur-sm text-white font-body text-xs font-semibold tracking-[0.08em] px-3 py-2 rounded-full">
+                  {item.comingSoon ? 'Em breve' : ((item as any).nextDate ?? 'Em breve')}
+                </span>
+              </div>
 
               {/* Content bottom */}
               <div className="absolute inset-x-0 bottom-0 p-7 flex flex-col">
@@ -477,7 +505,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
                       {item.desc}
                     </p>
                     <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-150">
-                        <button onClick={e => { e.stopPropagation(); onActivity?.((item as any)._dbIndex ?? i); }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
+                        <button onClick={e => { e.stopPropagation(); if (item.comingSoon) { setNotifyItem(item.title); } else { openBooking((item as any)._dbIndex ?? i); } }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
                           {item.comingSoon ? 'Entrar na lista' : 'Reservar'}
                         </button>
                         <button onClick={e => { e.stopPropagation(); onActivity?.((item as any)._dbIndex ?? i); }} className="border border-white/20 text-white/60 px-4 py-2 text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-xl hover:border-white/60 hover:text-white transition-colors">
@@ -489,7 +517,7 @@ function BoredOriginals({ onConquista, onActivity, onAllExperiences, adventures:
               </div>
 
               {/* Hover border glow */}
-              <div className={`absolute inset-0 rounded-3xl ring-1 ring-white/5 transition-all duration-500 ${item.comingSoon ? 'group-hover:ring-white/10' : 'group-hover:ring-neon-yellow/30'}`}></div>
+              <div className={`absolute inset-0 rounded-3xl ring-1 ring-white/5 transition-all duration-500 pointer-events-none ${item.comingSoon ? 'group-hover:ring-white/10' : 'group-hover:ring-neon-yellow/30'}`}></div>
             </motion.div>
           ))}
 
@@ -579,7 +607,17 @@ function parseDateRangeToNum(dr: string): number {
   return parseInt(m[3]) * 10000 + (PT_MONTHS[m[2]] ?? 0) * 100 + parseInt(m[1]);
 }
 
-function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista?: () => void; onActivity?: (i: number) => void; dbAdventures?: any[] }) {
+function ProximasSaidas({ onConquista, onActivity, onBooking, dbAdventures }: { onConquista?: () => void; onActivity?: (i: number) => void; onBooking?: (i: number) => void; dbAdventures?: any[] }) {
+  const [quickBooking, setQuickBooking] = useState<{ date: { id: string; date_range: string; status: string; spots: number; price: string }; title: string; image?: string; location?: string } | null>(null);
+
+  const openBooking = (activityIndex: number) => {
+    const adv = (dbAdventures ?? []).find((a: any) => (a.index ?? 0) === activityIndex);
+    if (!adv) return;
+    const firstDate = (adv.activity_dates ?? []).find((d: any) => d.status !== 'esgotado') ?? adv.activity_dates?.[0];
+    const d = firstDate ?? { id: adv.id, date_range: 'A definir', status: 'disponivel', spots: adv.max_people ?? 10, price: adv.price ?? '0€' };
+    setQuickBooking({ date: { id: d.id, date_range: d.date_range, status: d.status, spots: d.spots, price: d.price }, title: adv.title, image: adv.hero_image, location: adv.location });
+  };
+
   const fromDb = dbAdventures && dbAdventures.length > 0
     ? dbAdventures.filter(a => a.activity_dates?.length > 0).flatMap((a: any) =>
         (a.activity_dates ?? []).slice(0, 1).map((d: any) => ({
@@ -600,6 +638,7 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
 
   return (
     <section id="proximas-saidas" className="bg-brutal-black min-h-screen flex flex-col justify-center py-16 px-4 md:px-20">
+      {quickBooking && <BookingModal date={quickBooking.date} activityTitle={quickBooking.title} activityImage={quickBooking.image} activityLocation={quickBooking.location} onClose={() => setQuickBooking(null)} onHome={() => setQuickBooking(null)} />}
       {/* Header */}
       <div className="max-w-5xl mx-auto w-full mb-14 flex items-end justify-between">
         <div>
@@ -649,7 +688,7 @@ function ProximasSaidas({ onConquista, onActivity, dbAdventures }: { onConquista
 
             {/* CTA */}
             <button
-              onClick={e => { e.stopPropagation(); onActivity?.((item as any).activityIndex ?? 0); }}
+              onClick={e => { e.stopPropagation(); openBooking((item as any).activityIndex ?? 0); }}
               className="w-full sm:w-auto flex-shrink-0 bg-white text-brutal-black font-body font-bold text-[11px] uppercase tracking-[0.15em] px-6 py-3 sm:py-4 rounded-xl hover:bg-neon-yellow transition-colors duration-300"
             >
               Reservar
@@ -940,10 +979,19 @@ function IntroPortugal({ onConquista }: { onConquista?: () => void }) {
   );
 }
 
-function AllExperiencesPage({ onBack, onActivity, adventures }: { onBack: () => void; onActivity: (i: number) => void; adventures: any[] }) {
+function AllExperiencesPage({ onBack, onActivity, onBooking, adventures }: { onBack: () => void; onActivity: (i: number) => void; onBooking?: (i: number) => void; adventures: any[] }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'todas' | 'disponiveis' | 'embreve'>('todas');
   const [priceSort, setPriceSort] = useState<'none' | 'asc' | 'desc'>('none');
+  const [quickBooking, setQuickBooking] = useState<{ date: { id: string; date_range: string; status: string; spots: number; price: string }; title: string; image?: string; location?: string } | null>(null);
+
+  const openBooking = (index: number) => {
+    const adv = adventures.find((a: any) => (a.index ?? 0) === index);
+    if (!adv) return;
+    const firstDate = (adv.activity_dates ?? []).find((d: any) => d.status !== 'esgotado') ?? adv.activity_dates?.[0];
+    const d = firstDate ?? { id: adv.id, date_range: 'A definir', status: 'disponivel', spots: adv.max_people ?? 10, price: adv.price ?? '0€' };
+    setQuickBooking({ date: { id: d.id, date_range: d.date_range, status: d.status, spots: d.spots, price: d.price }, title: adv.title, image: adv.hero_image, location: adv.location });
+  };
 
   const items = (adventures.length > 0 ? adventures.map((a: any, i: number) => ({
     title: a.title,
@@ -971,6 +1019,7 @@ function AllExperiencesPage({ onBack, onActivity, adventures }: { onBack: () => 
 
   return (
     <div className="min-h-screen bg-brutal-black selection:bg-neon-yellow selection:text-brutal-black">
+      {quickBooking && <BookingModal date={quickBooking.date} activityTitle={quickBooking.title} activityImage={quickBooking.image} activityLocation={quickBooking.location} onClose={() => setQuickBooking(null)} onHome={() => setQuickBooking(null)} />}
       {/* Top bar */}
       <div className="sticky top-0 z-50 bg-brutal-black/95 backdrop-blur-md border-b border-white/[0.06] px-6 md:px-12 py-4 flex items-center justify-between gap-4">
         <button onClick={onBack} className="flex items-center gap-2 text-white/40 hover:text-white transition-colors duration-200 font-body text-sm">
@@ -1116,6 +1165,18 @@ function AllExperiencesPage({ onBack, onActivity, adventures }: { onBack: () => 
                       {(item as any).price && (
                         <p className="text-neon-yellow font-body text-xs md:text-sm font-extrabold mt-1">{(item as any).price}</p>
                       )}
+                      <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        {!item.comingSoon && (
+                          <button
+                            onClick={e => { e.stopPropagation(); openBooking(item.index); }}
+                            className="bg-neon-yellow text-brutal-black px-3 py-1.5 text-[9px] md:text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-lg hover:bg-white transition-colors"
+                          >Reservar</button>
+                        )}
+                        <button
+                          onClick={e => { e.stopPropagation(); onActivity(item.index); }}
+                          className="border border-white/30 text-white/70 px-3 py-1.5 text-[9px] md:text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-lg hover:border-white/70 hover:text-white transition-colors"
+                        >Saber mais</button>
+                      </div>
                     </div>
 
                     <div className="absolute inset-0 rounded-2xl ring-1 ring-white/5 group-hover:ring-neon-yellow/25 transition-all duration-300" />
@@ -1177,12 +1238,23 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
           initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
           className="text-neon-yellow font-body text-[10px] uppercase tracking-[0.35em] mb-8"
         >O nosso propósito</motion.p>
-        <motion.p
+        <motion.div
           initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }}
-          className="text-white text-[clamp(1.5rem,3.5vw,2.8rem)] leading-[1.3] font-body font-bold"
+          className="space-y-7"
         >
-          Acabar de vez com as viagens aborrecidas. Não estamos aqui pelas fotos perfeitas nem pelos destinos previsíveis. Estamos aqui para vos ajudar a criar histórias tão marcantes e inesperadas que o vosso eu do futuro vos vai agradecer por as terem vivido.
-        </motion.p>
+          <p className="text-white text-[clamp(1.5rem,3.5vw,2.8rem)] leading-[1.3] font-body font-bold">
+            Estamos cá para respeitar o planeta, criar experiências memoráveis, disseminar empatia e valorizar o conhecimento local. Queremos escapar das viagens aborrecidas e percorrer os cantinhos menos vistos de Portugal, numa missão de aventura e valorização do património.
+          </p>
+          <p className="text-white/80 text-[clamp(1.1rem,2.2vw,1.6rem)] leading-[1.55] font-body">
+            Somos por uma vida cheia, pelo prazer inigualável do ar puro, pela emoção, pela criatividade, pela autenticidade e pelo sonho. Queremos dar voz e espaço de afirmação a operadores locais, partindo das suas histórias e saberes para multiplicar momentos e sensações inesquecíveis.
+          </p>
+          <p className="text-white/80 text-[clamp(1.1rem,2.2vw,1.6rem)] leading-[1.55] font-body">
+            Queremos fugir do discurso ensaiado, da rotina dos dias, das fotos perfeitas e dos destinos previsíveis.
+          </p>
+          <p className="text-white/80 text-[clamp(1.1rem,2.2vw,1.6rem)] leading-[1.55] font-body">
+            Estamos aqui para vos ajudar a criar histórias tão marcantes e únicas que o vosso eu do futuro vos vai agradecer terem-nas vivido.
+          </p>
+        </motion.div>
       </div>
 
       {/* ── FULL SCREEN: foto esquerda + texto direita ── */}
@@ -1201,12 +1273,21 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
           initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.9, delay: 0.3 }}
           className="relative z-10 flex flex-col justify-center items-end w-full md:w-1/2 px-10 md:px-20 py-20 text-right bg-brutal-black"
         >
-          <p className="text-white/50 font-body text-[10px] uppercase tracking-[0.35em] mb-6">Porque criámos a Bored</p>
+          <p className="text-white/50 font-body text-[10px] uppercase tracking-[0.35em] mb-6">Porque criámos a Bored.</p>
           <p className="text-white text-lg md:text-2xl leading-[1.75] font-body mb-6">
-            Sempre acreditámos que as melhores aventuras acontecem quando nos afastamos do conforto. Fomos à boleia de Lisboa ao Qatar, vendados no Líbano sem dinheiro nem telemóvel, atravessámos os EUA à boleia, completámos um Ironman com seis meses de treino, fizemos voluntariado na Índia, vivemos com tribos na Colômbia.
+            Acreditamos que as melhores histórias acontecem quando nos afastamos da rotina. E que a aventura é o único antídoto para os desassossegados, os inquietos e os curiosos.
           </p>
-          <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body">
-            Estas experiências inspiraram-nos a criar o <strong className="text-white">Andamente</strong> — já com mais de 250 mil seguidores — e agora a <strong className="text-white">Bored</strong>: aventuras que desafiam a norma e nos lembram do que temos andado a perder.
+          <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body mb-6">
+            Como nós, que já fomos à boleia de Lisboa ao Qatar, percorremos o Líbano vendados e sem dinheiro nem telemóvel, atravessámos os EUA à boleia, completámos um Ironman com pouco treino, fizemos voluntariado na Índia ou vivemos com tribos na Colômbia.
+          </p>
+          <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body mb-6">
+            E que depois de tantas histórias percebemos que Portugal, a nossa casa, foi durante demasiado tempo tratada como se já a conhecêssemos em demasia. Como se fosse um sítio para voltar e não para descobrir. Até percebermos que temos um dos países mais absurdamente bonitos do mundo debaixo dos pés e que ele merece toda a nossa dedicação.
+          </p>
+          <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body mb-6">
+            Assim nasceu a <strong className="text-white">Bored.</strong> Para nos tirar do conformismo, da repetição acrítica do dia-a-dia e, sobretudo, para ser um ponto de encontro de uma tribo de exploradores que depende da aventura e da Natureza para conseguir sorrir.
+          </p>
+          <p className="text-white text-base md:text-lg leading-[1.75] font-body font-bold">
+            Somos o antídoto contra as viagens aborrecidas.
           </p>
         </motion.div>
       </div>
@@ -1296,11 +1377,11 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
 
 function SobreNos() {
   const photos = [
-    { src: "/foto1.jpg"},
-    { src: "/foto2.JPG"},
-    { src: "/foto3.png" },
-    { src: "/foto4.jpeg" },
-    { src: "/neve.jpeg" },
+    { src: "/foto1.jpg", alt: 'Aventura 1', year: '2024' },
+    { src: "/foto2.JPG", alt: 'Aventura 2', year: '2024' },
+    { src: "/foto3.png", alt: 'Aventura 3', year: '2024' },
+    { src: "/foto4.jpeg", alt: 'Aventura 4', year: '2024' },
+    { src: "/neve.jpeg", alt: 'Aventura 5', year: '2024' },
   ];
 
   return (
@@ -1539,17 +1620,16 @@ function StripePaymentForm({
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex gap-6 items-center">
         <button type="button" onClick={onBack} disabled={isProcessing}
-          className="flex-1 border border-white/20 text-white/50 py-4 rounded-2xl font-semibold text-sm hover:border-white/40 hover:text-white transition-colors disabled:opacity-40">
-          ← Voltar
+          className="text-white/40 text-xs uppercase tracking-[0.15em] hover:text-white transition-colors disabled:opacity-30 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Voltar
         </button>
         <motion.button
           type="submit"
           disabled={!stripe || !isReady || isProcessing}
-          whileHover={isReady && !isProcessing ? { scale: 1.02 } : {}}
-          whileTap={isReady && !isProcessing ? { scale: 0.98 } : {}}
-          className="flex-[2] bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+          className="flex-1 bg-white text-black py-4 rounded-full font-body font-bold text-xs uppercase tracking-[0.2em] hover:bg-white/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2">
           {isProcessing ? (
             <>
               <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
@@ -1567,7 +1647,7 @@ function StripePaymentForm({
               A carregar…
             </>
           ) : (
-            `Pagar ${depositAmount}€ →`
+            `Pagar ${depositAmount}€`
           )}
         </motion.button>
       </div>
@@ -1598,11 +1678,12 @@ interface HolderForm {
 }
 const emptyHolder = (): HolderForm => ({ name: '', email: '', phone: '', address: '', needsTransfer: false });
 
-function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, activityImage, activityLocation }: {
+function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, onHome, activityImage, activityLocation }: {
   date: { id: string; date_range: string; status: string; spots: number; price: string } | null;
   activityTitle?: string;
   bookingType?: 'vespa' | 'standard';
   onClose: () => void;
+  onHome?: () => void;
   activityImage?: string;
   activityLocation?: string;
 }) {
@@ -1614,6 +1695,7 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const payFull = true; // always pay full amount
 
   if (!date) return null;
 
@@ -1631,8 +1713,8 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
   const vespaPrices = dist.map(p => p === 2 ? priceDouble : priceSingle);
   const total = calcBookingPrice(people, vespas, basePrice);
 
-  const depositAmount = bookingType === 'vespa' ? Math.floor(total * 0.5) : Math.floor(standardTotal * 0.5);
   const grandTotal   = bookingType === 'vespa' ? total : standardTotal;
+  const depositAmount = grandTotal; // always full amount
 
   const fetchClientSecret = useCallback(async () => {
     setIsLoading(true);
@@ -1648,6 +1730,7 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
           },
           body: JSON.stringify(bookingType === 'vespa' ? {
             activityId: date.id,
+            activityDateId: date.id,
             activityTitle: activityTitle ?? 'Experiência Bored Originals',
             dateRange: date.date_range,
             people,
@@ -1657,6 +1740,7 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
             depositAmount,
           } : {
             activityId: date.id,
+            activityDateId: date.id,
             activityTitle: activityTitle ?? 'Experiência Bored Originals',
             dateRange: date.date_range,
             people,
@@ -1707,224 +1791,175 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
   const updateHolder = (i: number, field: keyof HolderForm, val: any) =>
     setHolders(prev => prev.map((h, idx) => idx === i ? { ...h, [field]: val } : h));
 
+  const step1Valid = holders[0].name !== '' && holders[0].email !== '' && holders[0].phone !== '';
   const step2Valid = bookingType === 'vespa'
     ? holders.slice(0, vespas).every(h => h.name && h.email && h.phone)
-    : holders[0].name !== '' && holders[0].email !== '' && holders[0].phone !== '';
+    : step1Valid;
 
   const currentTotal = bookingType === 'vespa' ? total : standardTotal;
-  const effectiveStep = step === 4 ? 3 : step;
+  // Steps for standard: 1=details+people, 3=confirm, 4=payment
+  // Map to display steps: 1→1, 3→2, 4→3
+  const effectiveStep = step <= 1 ? 1 : step === 3 ? 2 : 3;
+
+  // Shared primitives
+  const inputCls = "w-full bg-transparent border-b border-white/30 pb-3 pt-1 text-white text-base placeholder-white/25 focus:outline-none focus:border-white/70 transition-colors";
+  const labelCls = "text-white/60 text-xs uppercase tracking-[0.18em] block mb-2.5 font-semibold";
+  const primaryBtn = "w-full bg-white text-black py-4 rounded-full font-body font-bold text-sm uppercase tracking-[0.15em] hover:bg-white/90 active:bg-white/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2";
+  const ghostBtn  = "text-white/50 text-sm hover:text-white transition-colors flex items-center gap-2";
+  const rowCls    = "flex justify-between items-baseline py-4 border-b border-white/[0.08]";
 
   return (
-    <motion.div
+    createPortal(<motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] bg-brutal-black overflow-y-auto"
+      className="fixed inset-0 z-[200] bg-[#0a0a0a] flex flex-col overflow-hidden"
     >
       {/* ── Top bar ── */}
-      <div className="sticky top-0 z-10 bg-[#080808]/98 backdrop-blur-xl border-b border-white/[0.07] px-6 md:px-10 py-4 flex items-center gap-4">
-        <button onClick={onClose} className="flex items-center gap-2 text-white/50 hover:text-white text-xs uppercase tracking-[0.2em] transition-colors flex-shrink-0">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      <div className="flex-shrink-0 bg-[#0a0a0a] border-b border-white/[0.08] px-6 md:px-12 py-4 flex items-center">
+        <button onClick={onClose} className={ghostBtn}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           Voltar
         </button>
         <div className="flex-1 flex justify-center">
-          <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored." className="h-9 w-auto" />
+          <button onClick={() => { onClose(); onHome?.(); }} className="focus:outline-none">
+            <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored." className="h-8 w-auto" />
+          </button>
         </div>
-        {!paymentSuccess ? (
-          <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
-            {(['Reserva', 'Dados', 'Pagamento'] as const).map((label, i) => {
-              const sn = i + 1;
-              return (
-                <div key={sn} className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${effectiveStep >= sn ? 'bg-neon-yellow text-black' : 'bg-white/10 text-white/30'}`}>{sn}</div>
-                  <span className={`text-[10px] uppercase tracking-wider transition-colors ${effectiveStep === sn ? 'text-white' : 'text-white/25'}`}>{label}</span>
-                  {sn < 3 && <div className={`w-6 h-px transition-colors ${effectiveStep > sn ? 'bg-neon-yellow/40' : 'bg-white/10'}`} />}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-neon-yellow text-xs uppercase tracking-widest font-bold flex-shrink-0">Confirmada ✓</p>
-        )}
+        <div className="w-16" />
       </div>
 
+      {/* ── Scrollable content ── */}
+      <div className="flex-1 overflow-y-auto">
       {/* ── Main 2-col ── */}
-      <div className="max-w-5xl mx-auto px-6 md:px-10 py-10 flex flex-col lg:flex-row gap-10 lg:gap-16 items-start">
+      <div className="max-w-5xl mx-auto px-6 md:px-12 py-12 flex flex-col lg:flex-row gap-16 lg:gap-24 items-start">
 
         {/* LEFT: form */}
         <div className="flex-1 min-w-0">
 
-          {/* ══════════════════════════════════════════
-              STANDARD BOOKING (people-based)
-          ══════════════════════════════════════════ */}
+          {/* STANDARD */}
           {bookingType === 'standard' && (
             <>
-              {/* ── STEP 1 — Pessoas ── */}
               {step === 1 && (
-                <div className="space-y-7">
+                <div className="space-y-10">
+                  {/* People */}
                   <div>
-                    <p className="text-white font-bold text-xl mb-1">Quantas pessoas vão?</p>
-                    <p className="text-white/35 text-xs">Máx. {date.spots} vagas disponíveis nesta edição</p>
+                    <h2 className="text-white font-body font-bold text-3xl mb-1">Número de pessoas</h2>
+                    <p className="text-white/50 text-sm mt-1">{date.spots} lugares disponíveis nesta edição</p>
                   </div>
-
-                  <div className="flex items-center justify-between bg-white/5 border border-white/8 rounded-2xl px-5 py-4">
-                    <div>
-                      <p className="text-white/40 text-[10px] uppercase tracking-widest mb-1">Pessoas</p>
-                      <p className="text-white font-bold text-3xl leading-none">{people}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
+                  <div>
+                    <p className={labelCls}>Quantas pessoas vão?</p>
+                    <div className="flex items-center gap-4 mt-3">
                       <button onClick={() => setPeople(p => Math.max(1, p - 1))} disabled={people <= 1}
-                        className="w-10 h-10 rounded-full border border-white/20 text-white text-xl hover:bg-white/10 disabled:opacity-20 transition-all">−</button>
+                        className="w-11 h-11 rounded-full border border-white/30 text-white text-xl hover:border-white/70 disabled:opacity-20 transition-all flex items-center justify-center">−</button>
+                      <span className="text-white font-body font-bold text-4xl w-10 text-center leading-none">{people}</span>
                       <button onClick={() => setPeople(p => Math.min(date.spots, p + 1))} disabled={people >= date.spots}
-                        className="w-10 h-10 rounded-full border border-white/20 text-white text-xl hover:bg-white/10 disabled:opacity-20 transition-all">+</button>
+                        className="w-11 h-11 rounded-full border border-white/30 text-white text-xl hover:border-white/70 disabled:opacity-20 transition-all flex items-center justify-center">+</button>
+                    </div>
+                    <div className={`${rowCls} mt-6`}>
+                      <span className="text-white/50 text-base">{people} × {basePrice}€ por pessoa</span>
+                      <span className="text-white font-bold text-2xl">{standardTotal}€</span>
                     </div>
                   </div>
 
-                  <div className="bg-white/5 border border-white/8 rounded-2xl p-5 space-y-3">
-                    <p className="text-white/30 text-[10px] uppercase tracking-widest">Preço</p>
-                    <div className="flex justify-between items-baseline">
-                      <span className="text-white/40 text-sm">{people} × {basePrice}€ / pessoa</span>
-                      <span className="text-neon-yellow font-bold text-2xl">{standardTotal}€</span>
+                  <div className="border-t border-white/[0.07] pt-8">
+                    <h2 className="text-white font-body font-bold text-3xl mb-6">Titular da reserva</h2>
+                    <div className="space-y-7">
+                      {[
+                        { f: 'name',  label: 'Nome completo', ph: 'João Silva',       type: 'text'  },
+                        { f: 'email', label: 'Email',         ph: 'joao@exemplo.com', type: 'email' },
+                        { f: 'phone', label: 'Telemóvel',     ph: '+351 912 345 678', type: 'tel'   },
+                      ].map(({ f, label, ph, type }) => (
+                        <div key={f}>
+                          <label className={labelCls}>{label}</label>
+                          <input type={type} placeholder={ph} value={(holders[0] as any)[f]}
+                            onChange={e => updateHolder(0, f as keyof HolderForm, e.target.value)}
+                            className={inputCls} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setStep(3)} disabled={!step1Valid} className={primaryBtn}>Continuar</button>
+                </div>
+              )}
+
+              {step === 3 && (
+                <div className="space-y-10">
+                  <div>
+                    <h2 className="text-white font-body font-bold text-3xl mb-1">Confirmação</h2>
+                    <p className="text-white/50 text-sm mt-1">Verifica os detalhes antes de pagar</p>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="space-y-0">
+                    {[
+                      ['Experiência', activityTitle ?? ''],
+                      ['Data', date.date_range],
+                      ['Pessoas', `${people} pessoa${people > 1 ? 's' : ''}`],
+                      ['Preço por pessoa', `${basePrice}€`],
+                    ].map(([k, v]) => (
+                      <div key={k} className={rowCls}>
+                        <span className="text-white/50 text-sm">{k}</span>
+                        <span className="text-white text-sm font-medium">{v}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-baseline py-5">
+                      <span className="text-white/50 text-sm uppercase tracking-widest text-xs">Total</span>
+                      <span className="text-white font-bold text-2xl">{standardTotal}€</span>
                     </div>
                   </div>
 
-                  <button onClick={() => setStep(2)}
-                    className="w-full bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors">
-                    Continuar →
+                  {/* Titular summary */}
+                  <div className="border-l-2 border-white/15 pl-4 space-y-0.5">
+                    <p className="text-white text-sm font-medium">{holders[0].name}</p>
+                    <p className="text-white/40 text-sm">{holders[0].email} · {holders[0].phone}</p>
+                  </div>
+
+                  {paymentError && (
+                    <p className="text-red-400 text-sm border border-red-500/20 rounded-xl px-4 py-3">{paymentError}</p>
+                  )}
+
+                  <div className="space-y-4">
+                    <button onClick={fetchClientSecret} disabled={isLoading} className={primaryBtn}>
+                      {isLoading
+                        ? <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>A preparar…</>
+                        : `Pagar ${standardTotal}€`
+                      }
+                    </button>
+                    {/* Trust line */}
+                    <div className="flex items-center justify-center gap-3">
+                      <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                      <p className="text-white/30 text-xs">Pagamento seguro via Stripe · SSL 256-bit</p>
+                    </div>
+                  </div>
+
+                  <button onClick={() => setStep(1)} disabled={isLoading} className={ghostBtn}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    Voltar
                   </button>
                 </div>
               )}
 
-              {/* ── STEP 2 — Dados ── */}
-              {step === 2 && (
-                <div className="space-y-6">
-                  <div>
-                    <p className="text-white font-bold text-xl mb-1">Os teus dados</p>
-                    <p className="text-white/35 text-xs">Dados da pessoa responsável pela reserva</p>
-                  </div>
-
-                  <div className="bg-white/5 border border-white/8 rounded-2xl p-5 space-y-4">
-                    {[
-                      { f: 'name',    label: 'Nome completo',  ph: 'João Silva',           type: 'text'  },
-                      { f: 'email',   label: 'Email',          ph: 'joao@exemplo.com',     type: 'email' },
-                      { f: 'phone',   label: 'Telemóvel',      ph: '+351 912 345 678',     type: 'tel'   },
-                    ].map(({ f, label, ph, type }) => (
-                      <div key={f}>
-                        <label className="text-white/40 text-[10px] uppercase tracking-widest block mb-1.5">{label}</label>
-                        <input type={type} placeholder={ph} value={(holders[0] as any)[f]}
-                          onChange={e => updateHolder(0, f as keyof HolderForm, e.target.value)}
-                          className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-neon-yellow/60 transition-colors" />
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex gap-3 pt-1">
-                    <button onClick={() => setStep(1)} className="flex-1 border border-white/20 text-white/50 py-4 rounded-2xl font-semibold text-sm hover:border-white/40 hover:text-white transition-colors">← Voltar</button>
-                    <button onClick={() => setStep(3)} disabled={!step2Valid}
-                      className="flex-[2] bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                      Continuar →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── STEP 3 — Confirmação + Pagamento ── */}
-              {step === 3 && (
-                <div className="space-y-5">
-                  <div>
-                    <p className="text-white font-bold text-xl mb-1">Confirmação</p>
-                    <p className="text-white/35 text-xs">Reserva com 50% agora, o restante antes da saída</p>
-                  </div>
-
-                  <div className="bg-white/5 border border-white/8 rounded-2xl p-5 space-y-3 text-sm">
-                    <p className="text-white/30 text-[10px] uppercase tracking-widest">Resumo da reserva</p>
-                    {[
-                      ['Aventura', activityTitle ?? ''],
-                      ['Data', date.date_range],
-                      ['Pessoas', `${people} pessoa${people > 1 ? 's' : ''}`],
-                      ['Preço / pessoa', `${basePrice}€`],
-                    ].map(([k, v]) => (
-                      <div key={k} className="flex justify-between">
-                        <span className="text-white/45">{k}</span>
-                        <span className="text-white font-medium">{v}</span>
-                      </div>
-                    ))}
-                    <div className="border-t border-white/10 pt-3 flex justify-between items-baseline">
-                      <span className="text-white/40 text-xs uppercase tracking-widest">Total</span>
-                      <span className="text-white font-bold text-xl">{standardTotal}€</span>
-                    </div>
-                    <div className="bg-neon-yellow/12 border border-neon-yellow/20 rounded-xl px-4 py-3 flex justify-between items-center">
-                      <div>
-                        <p className="text-neon-yellow text-xs font-bold uppercase tracking-wider">A pagar agora (50%)</p>
-                        <p className="text-white/30 text-[10px]">Restante {Math.ceil(standardTotal * 0.5)}€ antes da saída</p>
-                      </div>
-                      <span className="text-neon-yellow font-bold text-2xl">{Math.floor(standardTotal * 0.5)}€</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-white/5 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <span className="text-lg">👤</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{holders[0].name}</p>
-                      <p className="text-white/30 text-[10px] truncate">{holders[0].email} · {holders[0].phone}</p>
-                    </div>
-                  </div>
-
-                  {paymentError && (
-                    <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-xs text-center">
-                      {paymentError}
-                    </div>
-                  )}
-                  <div className="flex gap-3 pt-1">
-                    <button onClick={() => setStep(2)} disabled={isLoading} className="flex-1 border border-white/20 text-white/50 py-4 rounded-2xl font-semibold text-sm hover:border-white/40 hover:text-white transition-colors disabled:opacity-40">← Voltar</button>
-                    <motion.button
-                      whileHover={!isLoading ? { scale: 1.02 } : {}}
-                      whileTap={!isLoading ? { scale: 0.98 } : {}}
-                      onClick={fetchClientSecret}
-                      disabled={isLoading}
-                      className="flex-[2] bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                      {isLoading ? (
-                        <>
-                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                          A preparar…
-                        </>
-                      ) : (
-                        `Pagar ${Math.floor(standardTotal * 0.5)}€ →`
-                      )}
-                    </motion.button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── STEP 4 — Stripe Payment Element ── */}
               {step === 4 && clientSecret && !paymentSuccess && (
-                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night', variables: { colorPrimary: '#FEFF01', colorBackground: '#111111', borderRadius: '12px' } } }}>
-                  <div className="space-y-5">
+                <Elements stripe={stripePromise} options={{ locale: 'pt', clientSecret, appearance: { theme: 'night', variables: { colorPrimary: '#ffffff', colorBackground: '#0a0a0a', borderRadius: '8px', colorText: '#ffffff', colorTextSecondary: 'rgba(255,255,255,0.5)' } } }}>
+                  <div className="space-y-10">
                     <div>
-                      <p className="text-white font-bold text-xl mb-1">Pagamento</p>
-                      <p className="text-white/35 text-xs">A pagar agora: {depositAmount}€ · Restante {grandTotal - depositAmount}€ antes da saída</p>
+                      <h2 className="text-white font-body font-bold text-3xl mb-1">Pagamento</h2>
+                      <p className="text-white/50 text-sm">A pagar agora: {depositAmount}€</p>
                     </div>
-                    <StripePaymentForm
-                      depositAmount={depositAmount}
-                      onSuccess={() => setPaymentSuccess(true)}
-                      onBack={() => setStep(3)}
-                    />
+                    <StripePaymentForm depositAmount={depositAmount} onSuccess={() => setPaymentSuccess(true)} onBack={() => setStep(3)} />
                   </div>
                 </Elements>
               )}
 
-              {/* ── SUCCESS ── */}
               {paymentSuccess && (
-                <div className="flex flex-col items-center gap-6 py-8 text-center">
-                  <div className="w-16 h-16 rounded-full bg-neon-yellow/15 border border-neon-yellow/30 flex items-center justify-center text-3xl">✓</div>
-                  <div>
-                    <p className="text-white font-bold text-2xl mb-2">Reserva confirmada!</p>
-                    <p className="text-white/40 text-sm leading-relaxed">
-                      Pagaste {depositAmount}€ de sinal.<br/>
-                      Vemo-nos em breve — prepara-te! 🏔️
-                    </p>
-                  </div>
-                  <button onClick={onClose} className="bg-neon-yellow text-black px-8 py-3 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors">
+                <div className="py-16 space-y-6">
+                  <div className="w-8 h-0.5 bg-white" />
+                  <h2 className="text-white font-body font-bold text-3xl">Reserva confirmada.</h2>
+                  <p className="text-white/50 text-base leading-relaxed max-w-sm">
+                    <>Pagaste {depositAmount}€. Vais receber um email com todos os detalhes.<br/>Vemo-nos em breve.</>
+                  </p>
+                  <button onClick={onClose} className="bg-white text-black px-8 py-3.5 rounded-full font-body font-bold text-sm uppercase tracking-[0.15em] hover:bg-white/90 transition-colors mt-4">
                     Fechar
                   </button>
                 </div>
@@ -1932,288 +1967,261 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
             </>
           )}
 
-          {/* ══════════════════════════════════════════
-              VESPA BOOKING (Aldeias Históricas de Mota)
-          ══════════════════════════════════════════ */}
+          {/* VESPA */}
           {bookingType === 'vespa' && (
             <>
-          {/* ── STEP 1 ── */}
-          {step === 1 && (
-            <div className="space-y-7">
-              <div>
-                <p className="text-white font-bold text-xl mb-1">Quantas pessoas vão?</p>
-                <p className="text-white/35 text-xs">Máx. {date.spots} vagas disponíveis nesta edição</p>
-              </div>
-
-              <div className="flex items-center justify-between bg-white/5 border border-white/8 rounded-2xl px-5 py-4">
-                <div>
-                  <p className="text-white/40 text-[10px] uppercase tracking-widest mb-1">Pessoas</p>
-                  <p className="text-white font-bold text-3xl leading-none">{people}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => changePeople(people - 1)} disabled={people <= 1}
-                    className="w-10 h-10 rounded-full border border-white/20 text-white text-xl hover:bg-white/10 disabled:opacity-20 transition-all">−</button>
-                  <button onClick={() => changePeople(people + 1)} disabled={people >= Math.min(8, date.spots)}
-                    className="w-10 h-10 rounded-full border border-white/20 text-white text-xl hover:bg-white/10 disabled:opacity-20 transition-all">+</button>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-white/40 text-[10px] uppercase tracking-widest mb-3">Quantas vespas precisam?</p>
-                <div className="flex gap-3 flex-wrap">
-                  {Array.from({ length: maxV - minV + 1 }, (_, i) => minV + i).map(n => (
-                    <button key={n} onClick={() => changeVespas(n)}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border font-semibold text-sm transition-all ${vespas === n ? 'bg-neon-yellow border-neon-yellow text-black' : 'border-white/20 text-white/60 hover:border-white/50 hover:text-white'}`}>
-                      {Array.from({ length: n }).map((_, vi) => <span key={vi} className="text-lg">🛵</span>)}
-                      <span>{n} vespa{n > 1 ? 's' : ''}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-white/5 border border-white/8 rounded-2xl p-5 space-y-3">
-                <p className="text-white/30 text-[10px] uppercase tracking-widest">Distribuição</p>
-                {dist.map((ppl, vi) => (
-                  <div key={vi} className="flex items-center gap-3">
-                    <span className="text-2xl">🛵</span>
-                    <div className="flex gap-1">{Array.from({ length: ppl }).map((_, pi) => <span key={pi} className="text-base">👤</span>)}</div>
-                    <div className="flex-1 text-right">
-                      <span className="text-white font-bold text-sm">{vespaPrices[vi]}€</span>
-                      <span className="text-white/25 text-[10px] ml-1">/ pessoa{ppl > 1 ? 's' : ''}</span>
-                    </div>
-                  </div>
-                ))}
-                <div className="border-t border-white/10 pt-3 flex justify-between items-baseline">
-                  <span className="text-white/35 text-xs uppercase tracking-widest">Total</span>
-                  <span className="text-neon-yellow font-bold text-2xl">{total}€</span>
-                </div>
-              </div>
-
-              <button onClick={() => setStep(2)}
-                className="w-full bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors">
-                Continuar →
-              </button>
-            </div>
-          )}
-
-          {/* ── STEP 2 ── */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div>
-                <p className="text-white font-bold text-xl mb-1">{vespas > 1 ? 'Dados dos titulares' : 'Dados do titular'}</p>
-                <p className="text-white/35 text-xs">O titular de cada vespa precisa de carta de condução válida (Cat. B ou AM)</p>
-              </div>
-
-              {holders.slice(0, vespas).map((holder, vi) => (
-                <div key={vi} className="bg-white/5 border border-white/8 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🛵</span>
-                    <p className="text-white font-semibold text-sm">Vespa {vi + 1}</p>
-                    <span className="text-white/30 text-xs">· {dist[vi]} pessoa{dist[vi] > 1 ? 's' : ''}</span>
-                    <span className="ml-auto text-neon-yellow font-bold text-sm">{vespaPrices[vi]}€</span>
-                  </div>
-                  {[
-                    { f: 'name',    label: 'Nome completo',  ph: 'João Silva',           type: 'text'  },
-                    { f: 'email',   label: 'Email',          ph: 'joao@exemplo.com',     type: 'email' },
-                    { f: 'phone',   label: 'Telemóvel',      ph: '+351 912 345 678',     type: 'tel'   },
-                    { f: 'address', label: 'Morada',         ph: 'Rua, Cidade, CP',      type: 'text'  },
-                  ].map(({ f, label, ph, type }) => (
-                    <div key={f}>
-                      <label className="text-white/40 text-[10px] uppercase tracking-widest block mb-1.5">{label}</label>
-                      <input type={type} placeholder={ph} value={(holder as any)[f]}
-                        onChange={e => updateHolder(vi, f as keyof HolderForm, e.target.value)}
-                        className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-neon-yellow/60 transition-colors" />
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between pt-1">
-                    <div>
-                      <p className="text-white/70 text-xs font-medium">Precisa de transfer até Belmonte?</p>
-                      <p className="text-white/25 text-[10px]">Podemos ajudar a organizar</p>
-                    </div>
-                    <button onClick={() => updateHolder(vi, 'needsTransfer', !holder.needsTransfer)}
-                      className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 ${holder.needsTransfer ? 'bg-neon-yellow' : 'bg-white/15'}`}>
-                      <motion.div animate={{ x: holder.needsTransfer ? 25 : 3 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                        className="absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white shadow" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setStep(1)} className="flex-1 border border-white/20 text-white/50 py-4 rounded-2xl font-semibold text-sm hover:border-white/40 hover:text-white transition-colors">← Voltar</button>
-                <button onClick={() => setStep(3)} disabled={!step2Valid}
-                  className="flex-[2] bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  Continuar →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 3 ── */}
-          {step === 3 && (
-            <div className="space-y-5">
-              <div>
-                <p className="text-white font-bold text-xl mb-1">Confirmação</p>
-                <p className="text-white/35 text-xs">Reserva com 50% agora, o restante à chegada a Belmonte</p>
-              </div>
-
-              <div className="bg-white/5 border border-white/8 rounded-2xl p-5 space-y-3 text-sm">
-                <p className="text-white/30 text-[10px] uppercase tracking-widest">Resumo da reserva</p>
-                {[
-                  ['Data', date.date_range],
-                  ['Pessoas', `${people} pessoa${people > 1 ? 's' : ''}`],
-                  ['Vespas', `${vespas} vespa${vespas > 1 ? 's' : ''}`],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between">
-                    <span className="text-white/45">{k}</span>
-                    <span className="text-white font-medium">{v}</span>
-                  </div>
-                ))}
-                {holders.some(h => h.needsTransfer) && (
-                  <div className="flex justify-between">
-                    <span className="text-white/45">Transfer</span>
-                    <span className="text-white/60">A confirmar</span>
-                  </div>
-                )}
-                <div className="border-t border-white/10 pt-3 space-y-1.5">
-                  {dist.map((ppl, vi) => (
-                    <div key={vi} className="flex justify-between text-xs text-white/35">
-                      <span>🛵 Vespa {vi + 1} · {holders[vi]?.name || '—'}</span>
-                      <span>{vespaPrices[vi]}€</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="border-t border-white/10 pt-3 flex justify-between items-baseline">
-                  <span className="text-white/40 text-xs uppercase tracking-widest">Total</span>
-                  <span className="text-white font-bold text-xl">{total}€</span>
-                </div>
-                <div className="bg-neon-yellow/12 border border-neon-yellow/20 rounded-xl px-4 py-3 flex justify-between items-center">
+              {step === 1 && (
+                <div className="space-y-10">
                   <div>
-                    <p className="text-neon-yellow text-xs font-bold uppercase tracking-wider">A pagar agora (50%)</p>
-                    <p className="text-white/30 text-[10px]">Restante {Math.ceil(total * 0.5)}€ à chegada</p>
+                    <p className={labelCls}>Grupo</p>
+                    <h2 className="text-white font-body font-bold text-2xl">Quantas pessoas vão?</h2>
+                    <p className="text-white/30 text-xs mt-1">{date.spots} lugares disponíveis nesta edição</p>
                   </div>
-                  <span className="text-neon-yellow font-bold text-2xl">{Math.floor(total * 0.5)}€</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {holders.slice(0, vespas).map((h, vi) => (
-                  <div key={vi} className="bg-white/5 rounded-xl px-4 py-3 flex items-center gap-3">
-                    <span className="text-lg">🛵</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{h.name}</p>
-                      <p className="text-white/30 text-[10px] truncate">{h.email} · {h.phone}</p>
+                  <div>
+                    <p className={labelCls}>Número de pessoas</p>
+                    <div className="flex items-center gap-5 mt-1">
+                      <button onClick={() => changePeople(people - 1)} disabled={people <= 1}
+                        className="w-9 h-9 border border-white/20 text-white text-lg hover:border-white/50 disabled:opacity-20 transition-all flex items-center justify-center">−</button>
+                      <span className="text-white font-body font-bold text-3xl w-8 text-center leading-none">{people}</span>
+                      <button onClick={() => changePeople(people + 1)} disabled={people >= Math.min(8, date.spots)}
+                        className="w-9 h-9 border border-white/20 text-white text-lg hover:border-white/50 disabled:opacity-20 transition-all flex items-center justify-center">+</button>
                     </div>
-                    {h.needsTransfer && <span className="text-[9px] bg-white/10 text-white/50 px-2 py-1 rounded-full uppercase tracking-widest flex-shrink-0">Transfer</span>}
                   </div>
-                ))}
-              </div>
-
-              {paymentError && (
-                <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-xs text-center">
-                  {paymentError}
+                  <div>
+                    <p className={labelCls}>Número de vespas</p>
+                    <div className="flex gap-2 flex-wrap mt-1">
+                      {Array.from({ length: maxV - minV + 1 }, (_, i) => minV + i).map(n => (
+                        <button key={n} onClick={() => changeVespas(n)}
+                          className={`px-5 py-2.5 border text-xs uppercase tracking-[0.12em] font-semibold transition-all ${vespas === n ? 'border-white bg-white text-black' : 'border-white/20 text-white/50 hover:border-white/50 hover:text-white'}`}>
+                          {n} vespa{n > 1 ? 's' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-0">
+                    {dist.map((ppl, vi) => (
+                      <div key={vi} className={rowCls}>
+                        <span className="text-white/40 text-sm">Vespa {vi + 1} · {ppl} pessoa{ppl > 1 ? 's' : ''}</span>
+                        <span className="text-white text-sm">{vespaPrices[vi]}€</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-baseline py-4">
+                      <span className="text-white/40 text-xs uppercase tracking-[0.15em]">Total</span>
+                      <span className="text-white font-bold text-2xl">{total}€</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setStep(2)} className={primaryBtn}>Continuar</button>
                 </div>
               )}
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setStep(2)} disabled={isLoading} className="flex-1 border border-white/20 text-white/50 py-4 rounded-2xl font-semibold text-sm hover:border-white/40 hover:text-white transition-colors disabled:opacity-40">← Voltar</button>
-                <motion.button
-                  whileHover={!isLoading ? { scale: 1.02 } : {}}
-                  whileTap={!isLoading ? { scale: 0.98 } : {}}
-                  onClick={fetchClientSecret}
-                  disabled={isLoading}
-                  className="flex-[2] bg-neon-yellow text-black py-4 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                  {isLoading ? (
-                    <>
-                      <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                      A preparar…
-                    </>
-                  ) : (
-                    `Pagar ${depositAmount}€ →`
-                  )}
-                </motion.button>
-              </div>
-            </div>
-          )}
 
-          {/* ── STEP 4 — Stripe Payment Element (vespa) ── */}
-          {step === 4 && clientSecret && !paymentSuccess && (
-            <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'night', variables: { colorPrimary: '#FEFF01', colorBackground: '#111111', borderRadius: '12px' } } }}>
-              <div className="space-y-5">
-                <div>
-                  <p className="text-white font-bold text-xl mb-1">Pagamento</p>
-                  <p className="text-white/35 text-xs">A pagar agora: {depositAmount}€ · Restante {grandTotal - depositAmount}€ à chegada</p>
+              {step === 2 && (
+                <div className="space-y-10">
+                  <div>
+                    <p className={labelCls}>Titulares</p>
+                    <h2 className="text-white font-body font-bold text-2xl">{vespas > 1 ? 'Dados dos titulares' : 'Dados do titular'}</h2>
+                    <p className="text-white/30 text-xs mt-1">Carta de condução válida obrigatória (Cat. B ou AM)</p>
+                  </div>
+                  {holders.slice(0, vespas).map((holder, vi) => (
+                    <div key={vi} className="space-y-7">
+                      <div className="flex items-baseline justify-between border-b border-white/10 pb-3">
+                        <p className="text-white/50 text-xs uppercase tracking-[0.15em]">Vespa {vi + 1} · {dist[vi]} pessoa{dist[vi] > 1 ? 's' : ''}</p>
+                        <span className="text-white text-sm font-semibold">{vespaPrices[vi]}€</span>
+                      </div>
+                      {[
+                        { f: 'name',    label: 'Nome completo', ph: 'João Silva',         type: 'text'  },
+                        { f: 'email',   label: 'Email',         ph: 'joao@exemplo.com',   type: 'email' },
+                        { f: 'phone',   label: 'Telemóvel',     ph: '+351 912 345 678',   type: 'tel'   },
+                        { f: 'address', label: 'Morada',        ph: 'Rua, Cidade, CP',    type: 'text'  },
+                      ].map(({ f, label, ph, type }) => (
+                        <div key={f}>
+                          <label className={labelCls}>{label}</label>
+                          <input type={type} placeholder={ph} value={(holder as any)[f]}
+                            onChange={e => updateHolder(vi, f as keyof HolderForm, e.target.value)}
+                            className={inputCls} />
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          <p className="text-white/50 text-xs">Transfer até Belmonte?</p>
+                          <p className="text-white/25 text-[10px] mt-0.5">Podemos ajudar a organizar</p>
+                        </div>
+                        <button onClick={() => updateHolder(vi, 'needsTransfer', !holder.needsTransfer)}
+                          className={`w-11 h-5 border transition-colors relative flex-shrink-0 ${holder.needsTransfer ? 'border-white bg-white' : 'border-white/20 bg-transparent'}`}>
+                          <motion.div animate={{ x: holder.needsTransfer ? 24 : 2 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                            className={`absolute top-[2px] w-[14px] h-[14px] transition-colors ${holder.needsTransfer ? 'bg-black' : 'bg-white/30'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between pt-2">
+                    <button onClick={() => setStep(1)} className={ghostBtn}>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Voltar
+                    </button>
+                    <button onClick={() => setStep(3)} disabled={!step2Valid}
+                      className="bg-white text-black px-10 py-3.5 font-body font-bold text-xs uppercase tracking-[0.2em] hover:bg-white/90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      Continuar
+                    </button>
+                  </div>
                 </div>
-                <StripePaymentForm
-                  depositAmount={depositAmount}
-                  onSuccess={() => setPaymentSuccess(true)}
-                  onBack={() => setStep(3)}
-                />
-              </div>
-            </Elements>
-          )}
+              )}
 
-          {/* ── SUCCESS (vespa) ── */}
-          {paymentSuccess && (
-            <div className="flex flex-col items-center gap-6 py-8 text-center">
-              <div className="w-16 h-16 rounded-full bg-neon-yellow/15 border border-neon-yellow/30 flex items-center justify-center text-3xl">✓</div>
-              <div>
-                <p className="text-white font-bold text-2xl mb-2">Reserva confirmada!</p>
-                <p className="text-white/40 text-sm leading-relaxed">
-                  Pagaste {depositAmount}€ de sinal.<br/>
-                  Prepara a scooter — vemo-nos em breve! 🛵
-                </p>
-              </div>
-              <button onClick={onClose} className="bg-neon-yellow text-black px-8 py-3 rounded-2xl font-bold text-sm uppercase tracking-[0.12em] hover:bg-white transition-colors">
-                Fechar
-              </button>
-            </div>
-          )}
+              {step === 3 && (
+                <div className="space-y-10">
+                  <div>
+                    <p className={labelCls}>Resumo</p>
+                    <h2 className="text-white font-body font-bold text-2xl">Confirmação</h2>
+                    <p className="text-white/30 text-xs mt-1">50% de sinal agora — restante à chegada a Belmonte</p>
+                  </div>
+                  <div className="space-y-0">
+                    {[
+                      ['Data', date.date_range],
+                      ['Pessoas', `${people} pessoa${people > 1 ? 's' : ''}`],
+                      ['Vespas', `${vespas} vespa${vespas > 1 ? 's' : ''}`],
+                    ].map(([k, v]) => (
+                      <div key={k} className={rowCls}>
+                        <span className="text-white/40 text-sm">{k}</span>
+                        <span className="text-white text-sm">{v}</span>
+                      </div>
+                    ))}
+                    {holders.some(h => h.needsTransfer) && (
+                      <div className={rowCls}>
+                        <span className="text-white/40 text-sm">Transfer</span>
+                        <span className="text-white/50 text-sm">A confirmar</span>
+                      </div>
+                    )}
+                    {dist.map((ppl, vi) => (
+                      <div key={vi} className={rowCls}>
+                        <span className="text-white/25 text-xs">Vespa {vi + 1} · {holders[vi]?.name || '—'}</span>
+                        <span className="text-white/40 text-xs">{vespaPrices[vi]}€</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-baseline py-4">
+                      <span className="text-white/40 text-xs uppercase tracking-[0.15em]">Total</span>
+                      <span className="text-white font-bold text-2xl">{total}€</span>
+                    </div>
+                    <div className="border border-white/15 px-5 py-4 flex justify-between items-center">
+                      <div>
+                        <p className="text-white/50 text-[10px] uppercase tracking-[0.15em]">A pagar agora</p>
+                        <p className="text-white/25 text-[10px] mt-0.5">Restante {Math.ceil(total * 0.5)}€ à chegada</p>
+                      </div>
+                      <span className="text-white font-bold text-2xl">{Math.floor(total * 0.5)}€</span>
+                    </div>
+                  </div>
+                  {holders.slice(0, vespas).map((h, vi) => (
+                    <div key={vi} className="border-l-2 border-white/10 pl-4 space-y-0.5">
+                      <p className="text-white text-sm">{h.name}</p>
+                      <p className="text-white/30 text-xs">{h.email} · {h.phone}{h.needsTransfer ? ' · Transfer' : ''}</p>
+                    </div>
+                  ))}
+                  {paymentError && (
+                    <p className="text-red-400 text-xs border border-red-500/30 px-4 py-3">{paymentError}</p>
+                  )}
+                  <div className="flex items-center justify-between pt-2">
+                    <button onClick={() => setStep(2)} disabled={isLoading} className={ghostBtn}>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Voltar
+                    </button>
+                    <button onClick={fetchClientSecret} disabled={isLoading}
+                      className="bg-white text-black px-10 py-3.5 font-body font-bold text-xs uppercase tracking-[0.2em] hover:bg-white/90 disabled:opacity-30 flex items-center gap-2 transition-colors">
+                      {isLoading ? <><svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>A preparar</> : `Pagar ${depositAmount}€`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {step === 4 && clientSecret && !paymentSuccess && (
+                <Elements stripe={stripePromise} options={{ locale: 'pt', clientSecret, appearance: { theme: 'night', variables: { colorPrimary: '#ffffff', colorBackground: '#0a0a0a', borderRadius: '0px', colorText: '#ffffff', colorTextSecondary: 'rgba(255,255,255,0.4)' } } }}>
+                  <div className="space-y-10">
+                    <div>
+                      <p className={labelCls}>Pagamento</p>
+                      <h2 className="text-white font-body font-bold text-2xl">Detalhes do cartão</h2>
+                      <p className="text-white/30 text-xs mt-1">A pagar agora: {depositAmount}€ · Restante {grandTotal - depositAmount}€ à chegada</p>
+                    </div>
+                    <StripePaymentForm depositAmount={depositAmount} onSuccess={() => setPaymentSuccess(true)} onBack={() => setStep(3)} />
+                  </div>
+                </Elements>
+              )}
+
+              {paymentSuccess && (
+                <div className="py-16 space-y-6">
+                  <div className="w-8 h-0.5 bg-white" />
+                  <h2 className="text-white font-body font-bold text-3xl">Reserva confirmada.</h2>
+                  <p className="text-white/40 text-sm leading-relaxed max-w-sm">
+                    Pagaste {depositAmount}€ de sinal. Vais receber um email com todos os detalhes.<br/>Prepara a scooter — vemo-nos em breve.
+                  </p>
+                  <button onClick={onClose} className="bg-white text-black px-10 py-3.5 font-body font-bold text-xs uppercase tracking-[0.2em] hover:bg-white/90 transition-colors mt-4">
+                    Fechar
+                  </button>
+                </div>
+              )}
             </>
           )}
 
         </div> {/* end left form */}
 
-        {/* RIGHT: Summary */}
-        <div className="w-full lg:w-80 flex-shrink-0">
-          <div className="lg:sticky lg:top-24 space-y-4">
-            <div className="bg-white/[0.04] border border-white/10 rounded-2xl overflow-hidden">
-              {activityImage && (
-                <img src={activityImage} alt={activityTitle ?? ''} className="w-full h-44 object-cover" />
-              )}
-              <div className="p-5 space-y-4">
-                {activityLocation && (
-                  <p className="text-white/30 text-[10px] uppercase tracking-[0.3em]">{activityLocation}</p>
+        {/* RIGHT: White card — 57Hours reference */}
+        <div className="w-full lg:w-[340px] flex-shrink-0">
+          <div className="lg:sticky lg:top-24 space-y-3">
+
+            {/* Main white card */}
+            <div className="bg-white rounded-2xl overflow-hidden shadow-xl">
+              {/* Header: thumbnail + title */}
+              <div className="flex items-start gap-4 p-5 border-b border-black/[0.07]">
+                {activityImage && (
+                  <img src={activityImage} alt={activityTitle ?? ''}
+                    className="w-16 h-16 object-cover rounded-xl flex-shrink-0" />
                 )}
-                <h3 className="text-white font-body font-extrabold text-lg leading-tight">{activityTitle}</h3>
-                <div className="border-t border-white/10 pt-4 space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-white/40">Data</span>
-                    <span className="text-white font-medium">{date.date_range}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/40">Pessoas</span>
-                    <span className="text-white font-medium">{people} pessoa{people > 1 ? 's' : ''}</span>
-                  </div>
-                  <div className="flex justify-between items-baseline border-t border-white/10 pt-3">
-                    <span className="text-white/40 text-xs uppercase tracking-widest">Total</span>
-                    <span className="text-neon-yellow font-bold text-xl">{currentTotal}€</span>
-                  </div>
-                  <div className="bg-neon-yellow/10 border border-neon-yellow/20 rounded-xl px-4 py-3">
-                    <p className="text-neon-yellow text-xs font-bold uppercase tracking-wider">A pagar agora (50%)</p>
-                    <p className="text-white/30 text-[10px] mt-0.5">Restante {currentTotal - depositAmount}€ antes da saída</p>
-                    <p className="text-neon-yellow font-bold text-2xl mt-2">{depositAmount}€</p>
-                  </div>
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <p className="text-black font-body font-bold text-base leading-tight">{activityTitle}</p>
+                  {activityLocation && (
+                    <p className="text-black/40 text-xs mt-1 uppercase tracking-[0.15em]">{activityLocation}</p>
+                  )}
                 </div>
               </div>
+
+              {/* Rows */}
+              <div className="divide-y divide-black/[0.07]">
+                <div className="px-5 py-4">
+                  <p className="text-black/40 text-xs font-bold uppercase tracking-[0.12em] mb-1">Experiência</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-black text-sm font-medium">{activityTitle}</p>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-black/25 flex-shrink-0 ml-2"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-black/40 text-xs font-bold uppercase tracking-[0.12em] mb-1">Data</p>
+                  <p className="text-black text-sm font-medium">{date.date_range}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-black/40 text-xs font-bold uppercase tracking-[0.12em] mb-1">Pessoas</p>
+                  <p className="text-black text-sm font-medium">{people} pessoa{people > 1 ? 's' : ''}</p>
+                </div>
+                {holders[0].name && (
+                  <div className="px-5 py-4">
+                    <p className="text-black/40 text-xs font-bold uppercase tracking-[0.12em] mb-1">Titular</p>
+                    <p className="text-black text-sm font-medium">{holders[0].name}</p>
+                    {holders[0].email && <p className="text-black/40 text-xs mt-0.5">{holders[0].email}</p>}
+                  </div>
+                )}
+              </div>
+
+              {/* Total */}
+              <div className="px-5 py-4 border-t border-black/[0.1] flex items-center justify-between">
+                <span className="text-black font-body font-bold text-base">Total</span>
+                <span className="text-black font-body font-bold text-2xl">{currentTotal}€</span>
+              </div>
             </div>
-            <div className="space-y-2.5">
+
+            {/* Guarantees */}
+            <div className="pt-1 space-y-3">
               {[
                 'Cancelamento grátis até 30 dias',
-                'Reserva com apenas 50% de sinal',
                 'Pagamento seguro via Stripe',
+                'Encriptação SSL 256-bit',
               ].map(text => (
-                <div key={text} className="flex items-center gap-3 text-white/40 text-xs">
-                  <span className="text-neon-yellow font-bold text-sm">✓</span>
+                <div key={text} className="flex items-center gap-3 text-white/50 text-sm">
+                  <span className="w-4 h-4 rounded-full border border-white/20 flex items-center justify-center flex-shrink-0 text-[10px] text-white/40">✓</span>
                   {text}
                 </div>
               ))}
@@ -2222,7 +2230,324 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
         </div>
 
       </div> {/* end main 2-col */}
-    </motion.div>
+      </div> {/* end scrollable content */}
+    </motion.div>, document.body)
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   WAITLIST MODAL — lista de espera + opção de depósito 50€
+───────────────────────────────────────────────────────────────────────────── */
+function WaitlistModal({ date, adventureId, activityTitle, onClose, onHome, activityImage, activityLocation }: {
+  date: { id: string; date_range: string; status: string; spots: number; price: string } | null;
+  adventureId?: string | null;
+  activityTitle?: string;
+  onClose: () => void;
+  onHome?: () => void;
+  activityImage?: string;
+  activityLocation?: string;
+}) {
+  const [step, setStep] = useState<'choose' | 'email' | 'pay' | 'emailDone' | 'payDone'>('choose');
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const ghostBtn = "text-white/50 text-sm hover:text-white transition-colors flex items-center gap-2";
+
+  if (!date) return null;
+
+  const DEPOSIT = 50;
+
+  const handleEmailSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setEmailError(null);
+    try {
+      const { addToWaitlist } = await import('./lib/supabase');
+      const { error } = await addToWaitlist(date.id, adventureId ?? null, email);
+      if (error) { setEmailError('Não foi possível guardar. Tenta novamente.'); return; }
+    } catch {
+      setEmailError('Erro de ligação. Tenta novamente.');
+      return;
+    } finally {
+      setIsLoading(false);
+    }
+    setStep('emailDone');
+  };
+
+  const handleDepositSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setPaymentError(null);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            activityId: date.id,
+            activityDateId: date.id,
+            activityTitle: activityTitle ?? 'Experiência Bored Originals',
+            dateRange: date.date_range,
+            people: 1,
+            vespas: 0,
+            holders: [{ name, email, phone }],
+            totalAmount: DEPOSIT * 100,
+            depositAmount: DEPOSIT * 100,
+            bookingType: 'waitlist_deposit',
+          }),
+        }
+      );
+      const data = await res.json();
+      if (data.clientSecret) {
+        setClientSecret(data.clientSecret);
+      } else {
+        setPaymentError(data.error ?? 'Erro desconhecido. Tenta novamente.');
+      }
+    } catch {
+      setPaymentError('Não foi possível conectar ao servidor de pagamento.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const topBar = (
+    <div className="flex-shrink-0 bg-[#0a0a0a] border-b border-white/[0.08] px-6 md:px-12 py-4 flex items-center">
+      <button onClick={onClose} className={ghostBtn}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        Voltar
+      </button>
+      <div className="flex-1 flex justify-center">
+        <button onClick={() => { onClose(); onHome?.(); }} className="focus:outline-none">
+          <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored." className="h-8 w-auto" />
+        </button>
+      </div>
+      <div className="w-16" />
+    </div>
+  );
+
+  const summaryCard = (
+    <div className="lg:w-80 flex-shrink-0">
+      <div className="rounded-2xl bg-white text-brutal-black overflow-hidden sticky top-8">
+        {activityImage && <div className="flex items-center gap-3 p-5 border-b border-black/8">
+          <img src={activityImage} alt="" className="w-14 h-14 rounded-xl object-cover" />
+          <div>
+            <p className="font-body font-bold text-base leading-tight">{activityTitle}</p>
+            {activityLocation && <p className="font-body text-[10px] uppercase tracking-widest text-black/35 mt-0.5">{activityLocation}</p>}
+          </div>
+        </div>}
+        <div className="p-5 space-y-3 text-sm font-body">
+          <div className="flex justify-between"><span className="text-black/45">Experiência</span><span className="font-semibold">{activityTitle}</span></div>
+          <div className="flex justify-between"><span className="text-black/45">Data</span><span className="font-semibold">{date.date_range}</span></div>
+          <div className="h-px bg-black/8" />
+          <div className="flex justify-between text-base font-bold"><span>Depósito</span><span>{DEPOSIT}€</span></div>
+          <p className="text-[11px] text-black/40 leading-snug">Os {DEPOSIT}€ são descontados no valor final da reserva</p>
+        </div>
+        <div className="px-5 pb-5 space-y-1.5">
+          {['Cancelamento grátis até 30 dias', 'Pagamento seguro via Stripe', 'Encriptação SSL 256-bit'].map(t => (
+            <div key={t} className="flex items-center gap-2 text-[11px] text-black/40">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7l3.5 3.5L12 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              {t}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  // When paying with deposit, switch to full-page BookingModal-style flow
+  if (step === 'pay' || step === 'payDone') {
+    return createPortal(
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[200] bg-[#0a0a0a] flex flex-col overflow-hidden">
+        {/* top bar */}
+        <div className="flex-shrink-0 bg-[#0a0a0a] border-b border-white/[0.08] px-6 md:px-12 py-4 flex items-center">
+          <button onClick={step === 'payDone' ? onClose : () => { setStep('choose'); setClientSecret(null); }} className="text-white/50 text-sm hover:text-white transition-colors flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Voltar
+          </button>
+          <div className="flex-1 flex justify-center">
+            <button onClick={() => { onClose(); onHome?.(); }} className="focus:outline-none">
+              <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored." className="h-8 w-auto" />
+            </button>
+          </div>
+          <div className="w-16" />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-6 md:px-12 py-12 flex flex-col lg:flex-row gap-16 lg:gap-24 items-start">
+            <div className="flex-1 min-w-0">
+              {step === 'pay' && !clientSecret && (
+                <form onSubmit={handleDepositSubmit}>
+                  <h2 className="text-white font-body font-bold text-3xl mb-2">Garantir o lugar</h2>
+                  <p className="text-white/40 font-body text-sm mb-10">Paga {DEPOSIT}€ de depósito para confirmar o teu lugar. Este valor é descontado no pagamento final.</p>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="text-white/50 font-body text-[10px] uppercase tracking-[0.18em] block mb-3">Nome completo</label>
+                      <input required value={name} onChange={e => setName(e.target.value)} placeholder="João Silva"
+                        className="w-full bg-transparent border-b border-white/15 focus:border-white/50 outline-none text-white font-body text-base py-2 placeholder-white/20 transition-colors" />
+                    </div>
+                    <div>
+                      <label className="text-white/50 font-body text-[10px] uppercase tracking-[0.18em] block mb-3">Email</label>
+                      <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="joao@exemplo.com"
+                        className="w-full bg-transparent border-b border-white/15 focus:border-white/50 outline-none text-white font-body text-base py-2 placeholder-white/20 transition-colors" />
+                    </div>
+                    <div>
+                      <label className="text-white/50 font-body text-[10px] uppercase tracking-[0.18em] block mb-3">Telemóvel</label>
+                      <input required value={phone} onChange={e => setPhone(e.target.value)} placeholder="+351 912 345 678"
+                        className="w-full bg-transparent border-b border-white/15 focus:border-white/50 outline-none text-white font-body text-base py-2 placeholder-white/20 transition-colors" />
+                    </div>
+                  </div>
+                  {paymentError && <p className="mt-4 text-red-400 font-body text-sm">{paymentError}</p>}
+                  <button type="submit" disabled={isLoading}
+                    className="mt-10 w-full bg-neon-yellow text-brutal-black font-body font-bold text-sm uppercase tracking-[0.12em] py-4 rounded-xl hover:bg-white transition-colors duration-300 disabled:opacity-50">
+                    {isLoading ? 'A processar…' : `Pagar depósito de ${DEPOSIT}€`}
+                  </button>
+                </form>
+              )}
+              {step === 'pay' && clientSecret && (
+                <div>
+                  <h2 className="text-white font-body font-bold text-3xl mb-8">Pagamento do depósito</h2>
+                  <Elements stripe={stripePromise} options={{ locale: 'pt', clientSecret, appearance: { theme: 'night', variables: { colorPrimary: '#ffffff', colorBackground: '#0a0a0a', borderRadius: '8px', colorText: '#ffffff', colorTextSecondary: 'rgba(255,255,255,0.5)' } } }}>
+                    <StripePaymentForm depositAmount={DEPOSIT} onSuccess={() => setStep('payDone')} onBack={() => setClientSecret(null)} />
+                  </Elements>
+                </div>
+              )}
+              {step === 'payDone' && (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 rounded-full bg-neon-yellow/10 flex items-center justify-center mx-auto mb-6">
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M4 14l7 7L24 7" stroke="#E8FF47" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                  <h2 className="text-white font-body font-bold text-3xl mb-3">Lugar garantido!</h2>
+                  <p className="text-white/40 font-body text-sm max-w-xs mx-auto leading-relaxed">O teu depósito de {DEPOSIT}€ foi confirmado. Vais receber um email com todos os detalhes.</p>
+                  <button onClick={onClose} className="mt-10 bg-white/8 hover:bg-white/15 text-white font-body font-bold text-sm uppercase tracking-widest px-8 py-3.5 rounded-xl transition-colors">Fechar</button>
+                </div>
+              )}
+            </div>
+            {/* summary card */}
+            <div className="lg:w-80 flex-shrink-0">
+              <div className="rounded-2xl bg-white text-brutal-black overflow-hidden sticky top-8">
+                {activityImage && <div className="flex items-center gap-3 p-5 border-b border-black/8">
+                  <img src={activityImage} alt="" className="w-14 h-14 rounded-xl object-cover" />
+                  <div>
+                    <p className="font-body font-bold text-base leading-tight">{activityTitle}</p>
+                    {activityLocation && <p className="font-body text-[10px] uppercase tracking-widest text-black/35 mt-0.5">{activityLocation}</p>}
+                  </div>
+                </div>}
+                <div className="p-5 space-y-3 text-sm font-body">
+                  <div className="flex justify-between"><span className="text-black/45">Data</span><span className="font-semibold">{date.date_range}</span></div>
+                  <div className="h-px bg-black/8" />
+                  <div className="flex justify-between text-base font-bold"><span>Depósito</span><span>{DEPOSIT}€</span></div>
+                  <p className="text-[11px] text-black/40 leading-snug">Descontado no valor final</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>,
+      document.body
+    );
+  }
+
+  // Popup overlay for choose / email / emailDone steps
+  return createPortal(
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] flex items-center justify-center px-4"
+      onClick={onClose}>
+      {/* backdrop */}
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        onClick={e => e.stopPropagation()}
+        className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+
+        {/* close button */}
+        <button onClick={onClose} className="absolute top-4 right-4 text-white/30 hover:text-white transition-colors z-10">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
+
+        <div className="p-8">
+          {/* CHOOSE */}
+          {step === 'choose' && (
+            <div>
+              <p className="text-white/30 font-body text-[10px] uppercase tracking-[0.3em] mb-2">{date.date_range}</p>
+              <h2 className="text-white font-body font-bold text-2xl mb-1">Entrar na lista</h2>
+              <p className="text-white/40 font-body text-sm mb-8">Esta edição está quase cheia. Escolhe como queres ficar a par.</p>
+              <div className="flex flex-col gap-3">
+                <button onClick={() => setStep('email')}
+                  className="text-left rounded-2xl border border-white/10 bg-white/4 hover:border-white/20 hover:bg-white/6 transition-all p-5 group">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-white font-body font-bold text-base mb-0.5">Lista de espera</p>
+                      <p className="text-white/40 font-body text-xs leading-relaxed">Deixa o teu email. Se abrir um lugar, avisamos.</p>
+                      <p className="text-white/20 font-body text-[10px] mt-1.5 uppercase tracking-wider">Gratuito · Sem compromisso</p>
+                    </div>
+                    <svg className="mt-0.5 flex-shrink-0 text-white/20 group-hover:text-white/50 transition-colors" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M7 10h6M10 7l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </button>
+                <button onClick={() => setStep('pay')}
+                  className="text-left rounded-2xl border border-neon-yellow/30 bg-neon-yellow/5 hover:bg-neon-yellow/10 hover:border-neon-yellow/50 transition-all p-5 group">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-white font-body font-bold text-base mb-0.5">Garantir o meu lugar — {DEPOSIT}€</p>
+                      <p className="text-white/40 font-body text-xs leading-relaxed">Depósito de {DEPOSIT}€, descontado no total.</p>
+                      <p className="text-neon-yellow/60 font-body text-[10px] mt-1.5 uppercase tracking-wider">Depósito · Descontado no total</p>
+                    </div>
+                    <svg className="mt-0.5 flex-shrink-0 text-neon-yellow/40 group-hover:text-neon-yellow/80 transition-colors" width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M7 10h6M10 7l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* EMAIL */}
+          {step === 'email' && (
+            <form onSubmit={handleEmailSubmit}>
+              <button type="button" onClick={() => setStep('choose')} className="text-white/30 hover:text-white transition-colors flex items-center gap-1.5 text-xs mb-6">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                Voltar
+              </button>
+              <h2 className="text-white font-body font-bold text-2xl mb-1">Lista de espera</h2>
+              <p className="text-white/40 font-body text-sm mb-8">Avisamos quando abrir um lugar nesta edição.</p>
+              <div>
+                <label className="text-white/50 font-body text-[10px] uppercase tracking-[0.18em] block mb-3">Email</label>
+                <input required type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="joao@exemplo.com"
+                  className="w-full bg-transparent border-b border-white/15 focus:border-white/50 outline-none text-white font-body text-base py-2 placeholder-white/20 transition-colors" />
+              </div>
+              {emailError && <p className="mt-3 text-red-400 font-body text-sm">{emailError}</p>}
+              <button type="submit" disabled={isLoading}
+                className="mt-8 w-full bg-neon-yellow text-brutal-black font-body font-bold text-sm uppercase tracking-[0.12em] py-3.5 rounded-xl hover:bg-white transition-colors duration-300 disabled:opacity-50">
+                {isLoading ? 'A guardar…' : 'Entrar na lista'}
+              </button>
+            </form>
+          )}
+
+          {/* EMAIL DONE */}
+          {step === 'emailDone' && (
+            <div className="text-center py-6">
+              <div className="w-14 h-14 rounded-full bg-neon-yellow/10 flex items-center justify-center mx-auto mb-5">
+                <svg width="24" height="24" viewBox="0 0 28 28" fill="none"><path d="M4 14l7 7L24 7" stroke="#E8FF47" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+              <h2 className="text-white font-body font-bold text-2xl mb-2">Estás na lista!</h2>
+              <p className="text-white/40 font-body text-sm leading-relaxed">Quando abrir um lugar nesta edição, és o primeiro a ser contactado.</p>
+              <button onClick={onClose} className="mt-8 bg-white/8 hover:bg-white/15 text-white font-body font-bold text-sm uppercase tracking-widest px-8 py-3 rounded-xl transition-colors">Fechar</button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body
   );
 }
 
@@ -2344,7 +2669,7 @@ function ConquistaPage({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="min-h-screen bg-[#f5f0eb] text-[#1a1a1a] font-body">
-      {bookingDate && <BookingModal date={bookingDate} activityTitle={adventureTitle} bookingType="vespa" activityImage={dbAdv?.hero_image} activityLocation="Belmonte, Beira Interior" onClose={() => setBookingDate(null)} />}
+      {bookingDate && <BookingModal date={bookingDate} activityTitle={adventureTitle} bookingType="vespa" activityImage={dbAdv?.hero_image} activityLocation="Belmonte, Beira Interior" onClose={() => setBookingDate(null)} onHome={onBack} />}
 
       {/* Sticky nav — glass pill like home */}
       <motion.div
@@ -3173,22 +3498,38 @@ const activitySpots: Record<number, { name: string; desc: string; image: string 
   ],
 };
 
-function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack: () => void }) {
+function ActivityPage({ activityIndex, onBack, autoBook = false }: { activityIndex: number; onBack: () => void; autoBook?: boolean }) {
   const [dbAdv, setDbAdv] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<string>('inclui');
   const [curiosityIndex, setCuriosityIndex] = useState(0);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [bookingDate, setBookingDate] = useState<{ id: string; date_range: string; status: string; spots: number; price: string } | null>(null);
+  const [waitlistDate, setWaitlistDate] = useState<{ id: string; date_range: string; status: string; spots: number; price: string } | null>(null);
 
   useEffect(() => {
     setDbAdv(null);
     getAdventureByIndex(activityIndex).then(adv => {
-      if (adv) setDbAdv(adv);
+      if (adv) {
+        setDbAdv(adv);
+        if (autoBook) {
+          // auto-open with first available date
+          const firstAvailable = (adv.activity_dates ?? []).find((d: any) => d.status !== 'esgotado') ?? adv.activity_dates?.[0];
+          const syntheticDate = firstAvailable ?? {
+            id: adv.id,
+            date_range: 'A definir',
+            status: 'disponivel',
+            spots: adv.max_people ?? 10,
+            price: adv.price ?? '0€',
+          };
+          setBookingDate({ id: syntheticDate.id, date_range: syntheticDate.date_range, status: syntheticDate.status, spots: syntheticDate.spots, price: syntheticDate.price });
+        }
+      }
     }).catch(console.error);
-  }, [activityIndex]);
+  }, [activityIndex, autoBook]);
 
   // Mapear campos do Supabase para o formato esperado pelos componentes
   const data = dbAdv ? {
+    id: dbAdv.id as string,
     title: dbAdv.title,
     tagline: dbAdv.tagline,
     location: dbAdv.location,
@@ -3267,12 +3608,10 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
         transition={{ duration: 0.5 }}
         className="fixed top-6 left-6 right-6 z-50 flex items-center justify-between pointer-events-none"
       >
-        <button onClick={onBack} className="pointer-events-auto flex items-center gap-2 text-white/70 hover:text-white font-body text-xs uppercase tracking-[0.2em] transition-colors drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          Originals
-        </button>
-        <div className="pointer-events-auto">
-          <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored Originals" className="h-12 w-auto drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]" />
+        <div className="pointer-events-auto flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 px-5 py-3 rounded-2xl">
+          <button onClick={onBack} className="text-white/50 font-body text-xs uppercase tracking-[0.15em] hover:text-white transition-colors">← Voltar</button>
+          <div className="w-px h-3 bg-white/20" />
+          <img src="https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/Check%20In%20EdItory.png" alt="Bored Originals" className="h-7 w-auto" />
         </div>
         <button onClick={scrollToTabs} className="pointer-events-auto bg-neon-yellow text-brutal-black px-5 py-2.5 text-xs font-body font-bold uppercase tracking-[0.1em] rounded-2xl hover:bg-white transition-colors">
           Ver datas →
@@ -3311,6 +3650,38 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
                 {data.tagline}
               </h2>
               <p className="text-white/50 text-lg leading-[1.85]">{data.description}</p>
+
+              {/* Nível de esforço */}
+              {(() => {
+                const levels: Record<string, { bars: number; color: string; label: string }> = {
+                  'Fácil':         { bars: 1, color: '#4ade80', label: 'Fácil' },
+                  'Fácil/Moderado':{ bars: 2, color: '#a3e635', label: 'Fácil / Moderado' },
+                  'Moderado':      { bars: 2, color: '#FFE600', label: 'Moderado' },
+                  'Difícil':       { bars: 3, color: '#fb923c', label: 'Difícil' },
+                  'Muito Difícil': { bars: 4, color: '#f87171', label: 'Muito Difícil' },
+                };
+                const lvl = levels[data.difficulty] ?? { bars: 2, color: '#FFE600', label: data.difficulty };
+                return (
+                  <div className="mt-6 flex items-center gap-4">
+                    <span className="text-white/30 font-body text-[10px] uppercase tracking-[0.3em]">Nível de esforço</span>
+                    <div className="flex items-end gap-1.5">
+                      {[1,2,3,4].map(n => (
+                        <div
+                          key={n}
+                          style={{
+                            width: 10,
+                            height: 8 + n * 5,
+                            borderRadius: 3,
+                            background: n <= lvl.bars ? lvl.color : 'rgba(255,255,255,0.1)',
+                            transition: 'background 0.3s',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="font-body font-bold text-xs uppercase tracking-[0.12em]" style={{ color: lvl.color }}>{lvl.label}</span>
+                  </div>
+                );
+              })()}
             </div>
             <div className="flex gap-4">
               <button onClick={scrollToTabs} className="bg-white text-brutal-black font-body font-bold text-xs uppercase tracking-[0.18em] px-7 py-3.5 rounded-xl hover:bg-neon-yellow transition-colors duration-300">
@@ -3346,11 +3717,16 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
           <h3 className="text-4xl md:text-7xl font-body font-extrabold text-white leading-none tracking-tight">Escolhe a tua edição</h3>
         </div>
         <div className="flex flex-col gap-3 max-w-4xl mx-auto">
-          {bookingDate && <BookingModal date={bookingDate} activityTitle={data.title} activityImage={data.heroImage} activityLocation={data.location} onClose={() => setBookingDate(null)} />}
+          {bookingDate && <BookingModal date={bookingDate} activityTitle={data.title} activityImage={data.heroImage} activityLocation={data.location} onClose={() => setBookingDate(null)} onHome={onBack} />}
+          {waitlistDate && <WaitlistModal date={waitlistDate} adventureId={dbAdv?.id ?? null} activityTitle={data.title} activityImage={data.heroImage} activityLocation={data.location} onClose={() => setWaitlistDate(null)} onHome={onBack} />}
           {dates.map((d: any, i: number) => {
             const isAvailable = d.status === 'disponivel';
             const isFilling = d.status === 'apreencher';
             const isSoldOut = d.status === 'esgotado';
+            const spotsNum = d.spots ?? 0;
+            const spotsLabel = isFilling
+              ? `Últimos ${spotsNum} lugares`
+              : `${spotsNum} lugares disponíveis`;
             return (
               <motion.div
                 key={i}
@@ -3358,45 +3734,59 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, delay: i * 0.07 }}
-                className={`relative overflow-hidden rounded-2xl border transition-colors ${isFilling ? 'border-neon-yellow/30 bg-neon-yellow/5' : 'border-white/8 bg-white/4 hover:border-white/15'}`}
+                className={`relative overflow-hidden rounded-2xl border transition-colors ${
+                  isSoldOut ? 'border-white/5 bg-white/2 opacity-50' : 'border-white/8 bg-white/[0.03] hover:border-white/18 hover:bg-white/[0.05]'
+                }`}
               >
-                {/* Urgency bar */}
-                {isFilling && (
-                  <div className="h-[2px] w-full bg-gradient-to-r from-neon-yellow to-neon-yellow/40" />
-                )}
-
-                <div className="px-5 md:px-8 py-5 md:py-6">
-                  {/* Row 1: date + status badge */}
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-white font-body font-extrabold text-xl md:text-2xl leading-none">{d.date_range ?? d.range}</span>
-                    <span className={`font-body text-[9px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full ${
-                      isAvailable ? 'bg-green-500/15 text-green-400' :
-                      isFilling   ? 'bg-neon-yellow/20 text-neon-yellow' :
-                                    'bg-red-500/15 text-red-400'
-                    }`}>
-                      {isAvailable ? 'Disponível' : isFilling ? 'A preencher' : 'Esgotado'}
-                    </span>
+                <div className="flex items-stretch">
+                  {/* Left content */}
+                  <div className="flex-1 px-6 md:px-8 py-6 md:py-7">
+                    {/* Date */}
+                    <p className="text-white/40 font-body text-xs uppercase tracking-[0.25em] mb-1.5">Data</p>
+                    <p className="text-white font-body font-bold text-lg md:text-xl leading-tight mb-5">{d.date_range ?? d.range}</p>
+                    {/* Price row */}
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-white font-body font-extrabold text-4xl leading-none tracking-tight">{d.price}</span>
+                      <span className="text-white/30 font-body text-sm">por pessoa</span>
+                    </div>
                   </div>
 
-                  {/* Row 2: price + spots + CTA */}
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-white font-body font-extrabold text-3xl leading-none">{d.price}</p>
-                      <p className={`text-xs mt-1.5 font-body ${isFilling ? 'text-neon-yellow font-bold' : 'text-white/30'}`}>
-                        {isFilling ? `⚡ Últimas ${d.spots} vagas` : `${d.spots} vagas disponíveis`}
-                      </p>
-                    </div>
+                  {/* Right: spots + CTA */}
+                  <div className="flex flex-col items-end justify-between px-6 md:px-8 py-6 md:py-7 border-l border-white/6 min-w-fit">
+                    {/* Spots pill */}
+                    {!isSoldOut ? (
+                      <span className={`inline-flex items-center gap-1.5 font-body text-[11px] font-semibold px-3 py-1.5 rounded-full ${
+                        isFilling
+                          ? 'bg-amber-400/10 text-amber-400'
+                          : 'bg-white/6 text-white/50'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                          isFilling ? 'bg-amber-400' : 'bg-emerald-400'
+                        }`} />
+                        {spotsLabel}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 font-body text-[11px] font-semibold px-3 py-1.5 rounded-full bg-white/4 text-white/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0" />
+                        Esgotado
+                      </span>
+                    )}
+                    {/* CTA */}
                     {!isSoldOut ? (
                       <button
-                        onClick={() => setBookingDate({ id: d.id, date_range: d.date_range ?? d.range, status: d.status, spots: d.spots, price: d.price })}
-                        className={`flex-shrink-0 font-body font-bold text-[11px] uppercase tracking-[0.15em] px-6 py-3.5 rounded-xl transition-colors duration-300 whitespace-nowrap ${
-                          isAvailable ? 'bg-neon-yellow text-brutal-black hover:bg-white' : 'bg-white/10 text-white hover:bg-white/20'
+                        onClick={() => {
+                          const dateObj = { id: d.id, date_range: d.date_range ?? d.range, status: d.status, spots: d.spots, price: d.price };
+                          if (isAvailable) setBookingDate(dateObj);
+                          else setWaitlistDate(dateObj);
+                        }}
+                        className={`mt-4 font-body font-bold text-[11px] uppercase tracking-[0.15em] px-5 py-3 rounded-xl transition-colors duration-300 whitespace-nowrap ${
+                          isAvailable
+                            ? 'bg-neon-yellow text-brutal-black hover:bg-white'
+                            : 'bg-white text-brutal-black hover:bg-neon-yellow'
                         }`}>
                         {isAvailable ? 'Reservar lugar' : 'Entrar na lista'}
                       </button>
-                    ) : (
-                      <span className="text-white/20 font-body text-xs uppercase tracking-widest">Esgotado</span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </motion.div>
@@ -3526,8 +3916,10 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
         </div>
       </div>
 
-      {/* ── STICKY TAB MENU ── */}
-      <div className="sticky top-[72px] z-40 mt-24 relative" style={{ background: 'rgba(8,8,8,0.98)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }}>
+      {/* ── TABS WRAPPER ── */}
+      <div>
+      {/* ── TAB MENU ── */}
+      <div style={{ background: 'rgba(8,8,8,0.98)', backdropFilter: 'blur(32px)', boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }}>
         {/* top accent line */}
         <div style={{ height: 2, background: 'linear-gradient(90deg, transparent 0%, #FFE600 20%, #FFE600 80%, transparent 100%)' }} />
         {/* Right fade hint — only on mobile */}
@@ -3687,6 +4079,8 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
         </motion.div>
       </div>
 
+      </div>{/* ── fim TABS WRAPPER ── */}
+
       {/* ── ÁLBUM DE FOTOS ── */}
       <div className="px-10 md:px-20 py-20 border-t border-white/6">
         <div className="mb-10 text-center">
@@ -3775,7 +4169,7 @@ function ActivityPage({ activityIndex, onBack }: { activityIndex: number; onBack
 }
 
 
-function FaqItem({ q, a }: { q: string; a: string }) {
+function FaqItem({ q, a, ..._ }: { q: string; a: string; [k: string]: any }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.94)', border: '1px solid rgba(255,255,255,0.15)' }}>
@@ -3849,77 +4243,28 @@ function PaymentSuccessPage({ onHome }: { onHome: () => void }) {
 function ApoioPage({ onBack }: { onBack: () => void }) {
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sections, setSections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const sections = [
-    {
-      id: 'reservas',
-      icon: '📅',
-      title: 'Reservas & Cancelamentos',
-      color: 'from-neon-yellow/10 to-transparent',
-      border: 'border-neon-yellow/20',
-      items: [
-        { q: 'Como faço uma reserva?', a: 'Escolhe a aventura que queres, seleciona a data disponível e segue o processo de reserva. Pedimos um depósito de 50% para garantir o teu lugar. O restante é pago antes da partida.' },
-        { q: 'Posso cancelar a minha reserva?', a: 'Sim. Cancelamento gratuito até 30 dias antes da aventura. Entre 30 e 15 dias, devolução de 50% do valor pago. Menos de 15 dias, sem reembolso — mas podes ceder o teu lugar a outra pessoa sem custo adicional.' },
-        { q: 'E se a aventura for cancelada pela Bored?', a: 'Em caso de cancelamento por nossa parte (condições meteorológicas extremas, força maior), oferecemos nova data ou reembolso total. Nunca ficas a perder.' },
-        { q: 'Posso transferir a minha reserva para outra pessoa?', a: 'Sim, podes ceder o teu lugar a outra pessoa sem qualquer custo adicional. Basta enviar-nos um email com os dados da nova pessoa.' },
-        { q: 'Como funciona o pagamento do depósito?', a: 'O depósito corresponde a 50% do valor total. É processado via cartão de crédito/débito através do Stripe (plataforma segura). O restante é pago por transferência bancária até 7 dias antes da aventura.' },
-      ],
-    },
-    {
-      id: 'aventuras',
-      icon: '🧭',
-      title: 'Sobre as Aventuras',
-      color: 'from-white/5 to-transparent',
-      border: 'border-white/10',
-      items: [
-        { q: 'As aventuras são adequadas para iniciantes?', a: 'Depende da aventura. Cada experiência tem um nível de dificuldade indicado. Algumas são acessíveis a qualquer pessoa, outras requerem preparação física. Lê bem a descrição antes de reservar — e se tiveres dúvidas, fala connosco.' },
-        { q: 'Qual é o número mínimo e máximo de participantes?', a: 'A maioria das aventuras tem entre 6 e 14 pessoas. Isto garante um grupo pequeno o suficiente para ser íntimo, mas grande o suficiente para ser divertido.' },
-        { q: 'O que está incluído no preço?', a: 'Varia por aventura, mas geralmente inclui guia, alojamento, refeições indicadas, transportes durante a aventura e equipamento específico. Consulta a página de cada experiência para ver a lista completa.' },
-        { q: 'Posso participar sozinho?', a: 'Absolutamente. A maioria dos participantes vem sozinho e vai embora com amigos para a vida. É parte do conceito Bored.' },
-        { q: 'As aventuras têm seguro?', a: 'Recomendamos que contrates um seguro de viagem/aventura. Algumas atividades específicas incluem seguro de acidentes — está indicado na página da experiência.' },
-        { q: 'Posso personalizar ou pedir uma aventura privada?', a: 'Sim! Temos opção de aventuras privadas para grupos (mínimo 8 pessoas). Envia-nos um email e desenhamos algo à tua medida.' },
-      ],
-    },
-    {
-      id: 'preparacao',
-      icon: '🎒',
-      title: 'Preparação & Material',
-      color: 'from-white/5 to-transparent',
-      border: 'border-white/10',
-      items: [
-        { q: 'O que devo levar?', a: 'Cada aventura tem uma lista de material específica disponível na página da experiência. Em geral: roupa confortável, calçado adequado ao terreno e uma mochila pequena. Menos é mais.' },
-        { q: 'O equipamento técnico é fornecido?', a: 'Para atividades que requerem equipamento específico (capacetes, coletes, etc.), tudo é fornecido. Nunca precisas de comprar nada especial.' },
-        { q: 'E a alimentação?', a: 'A maioria das aventuras inclui pequenos-almoços e jantares. Almoços são geralmente livres — damos sugestões no guia da aventura. Se tens restrições alimentares, indica no momento da reserva.' },
-        { q: 'Como me preparo fisicamente?', a: 'Cada aventura indica o nível de condição física necessário. Para as mais exigentes, incluímos sugestões de treino. O mais importante é chegar descansado e com vontade.' },
-      ],
-    },
-    {
-      id: 'detox',
-      icon: '📵',
-      title: 'Detox Digital',
-      color: 'from-white/5 to-transparent',
-      border: 'border-white/10',
-      items: [
-        { q: 'O que é o conceito de detox digital?', a: 'Em cada aventura, incentivamos (ou impomos) momentos sem telemóvel. Não é uma regra rígida — é um convite a estar presente. Acredita, é libertador.' },
-        { q: 'Vou ficar completamente sem acesso ao telemóvel?', a: 'Depende da aventura. Algumas têm zonas sem sinal por natureza. Outras têm momentos específicos de desconexão. Nunca ficará em risco a tua segurança.' },
-        { q: 'Posso usar o telemóvel em emergências?', a: 'Sempre. A desconexão é um convite, nunca uma prisão. Em situação de emergência tens sempre acesso ao telemóvel e ao apoio da equipa.' },
-      ],
-    },
-    {
-      id: 'contacto',
-      icon: '💬',
-      title: 'Contacto & Suporte',
-      color: 'from-white/5 to-transparent',
-      border: 'border-white/10',
-      items: [
-        { q: 'Como posso contactar-vos?', a: 'Por email: bookings@boredtourist.com. Respondemos em menos de 24h nos dias úteis. Podes também enviar-nos uma mensagem no Instagram @bored_tourist.' },
-        { q: 'Tenho uma dúvida urgente antes da aventura. O que faço?', a: 'Alguns dias antes da aventura recebes os contactos diretos do teu guia. Para questões urgentes, envia um email com "URGENTE" no assunto e respondemos no próprio dia.' },
-        { q: 'Onde posso acompanhar novidades e novas aventuras?', a: 'Instagram @boredoriginals e newsletter. Subscreve na nossa página principal para seres o primeiro a saber de novas saídas e aventuras secretas.' },
-      ],
-    },
-  ];
+  useEffect(() => {
+    import('./lib/supabase').then(({ getSiteFaqs }) => {
+      getSiteFaqs().then(data => {
+        if (data && data.length > 0) {
+          setSections(data.map(cat => ({
+            id: cat.key,
+            icon: cat.icon,
+            title: cat.title,
+            color: cat.key === 'reservas' ? 'from-neon-yellow/10 to-transparent' : 'from-white/5 to-transparent',
+            border: cat.key === 'reservas' ? 'border-neon-yellow/20' : 'border-white/10',
+            items: cat.items.map(i => ({ q: i.question, a: i.answer })),
+          })));
+        }
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    });
+  }, []);
 
-  const allItems = sections.flatMap(s => s.items.map(item => ({ ...item, section: s.title })));
+  const allItems = sections.flatMap((s: any) => s.items.map((item: any) => ({ ...item, section: s.title })));
   const filtered = search.trim()
     ? allItems.filter(i => i.q.toLowerCase().includes(search.toLowerCase()) || i.a.toLowerCase().includes(search.toLowerCase()))
     : [];
@@ -4092,6 +4437,8 @@ function ApoioPage({ onBack }: { onBack: () => void }) {
 function ActivityRoute({ adventures }: { adventures: any[] }) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const autoBook = searchParams.get('book') === '1';
 
   const activityIndex = useMemo(() => {
     if (!slug) return 0;
@@ -4109,12 +4456,13 @@ function ActivityRoute({ adventures }: { adventures: any[] }) {
     );
   }
 
-  return <ActivityPage activityIndex={activityIndex} onBack={() => navigate(-1 as any)} />;
+  return <ActivityPage activityIndex={activityIndex} autoBook={autoBook} onBack={() => navigate(-1 as any)} />;
 }
 
 function AppRoutes() {
   const navigate = useNavigate();
   const [dbAdventures, setDbAdventures] = useState<any[]>([]);
+  const [quickBooking, setQuickBooking] = useState<{ date: { id: string; date_range: string; status: string; spots: number; price: string }; title: string; image?: string; location?: string } | null>(null);
 
   useEffect(() => {
     getAdventures().then(setDbAdventures).catch(console.error);
@@ -4128,6 +4476,31 @@ function AppRoutes() {
     const slug = adv ? slugify(adv.title) : String(index);
     navigate(`/actividade/${slug}`);
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [dbAdventures, navigate]);
+
+  const goToBooking = useCallback((index: number) => {
+    const adv = dbAdventures.find((a: any) => (a.index ?? 0) === index);
+    if (!adv) {
+      // Data not yet loaded — navigate as fallback
+      navigate(`/actividade/${index}?book=1`);
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      return;
+    }
+    // Use first available date, or first date of any status, or synthesise one from the activity price
+    const firstDate = (adv.activity_dates ?? []).find((d: any) => d.status !== 'esgotado') ?? adv.activity_dates?.[0];
+    const syntheticDate = firstDate ?? {
+      id: adv.id,
+      date_range: 'A definir',
+      status: 'disponivel',
+      spots: adv.max_people ?? 10,
+      price: adv.price ?? '0€',
+    };
+    setQuickBooking({
+      date: { id: syntheticDate.id, date_range: syntheticDate.date_range, status: syntheticDate.status, spots: syntheticDate.spots, price: syntheticDate.price },
+      title: adv.title,
+      image: adv.hero_image,
+      location: adv.location,
+    });
   }, [dbAdventures, navigate]);
 
   const nav = {
@@ -4150,18 +4523,29 @@ function AppRoutes() {
   );
 
   return (
-    <Routes>
+    <>
+      {quickBooking && (
+        <BookingModal
+          date={quickBooking.date}
+          activityTitle={quickBooking.title}
+          activityImage={quickBooking.image}
+          activityLocation={quickBooking.location}
+          onClose={() => setQuickBooking(null)}
+          onHome={() => { setQuickBooking(null); nav.toHome(); }}
+        />
+      )}
+      <Routes>
       <Route path="/" element={
         <div className="min-h-screen bg-brutal-black selection:bg-neon-yellow selection:text-brutal-black">
           {sharedNavbar}
           <Hero />
-          <BoredOriginals onConquista={nav.toConquista} onActivity={goToActivity} onAllExperiences={nav.toAllExperiences} adventures={dbAdventures} />
-          <ProximasSaidas onConquista={nav.toConquista} onActivity={goToActivity} dbAdventures={dbAdventures} />
+          <BoredOriginals onConquista={nav.toConquista} onActivity={goToActivity} onBooking={goToBooking} onAllExperiences={nav.toAllExperiences} adventures={dbAdventures} />
+          <ProximasSaidas onConquista={nav.toConquista} onActivity={goToActivity} onBooking={goToBooking} dbAdventures={dbAdventures} />
           <OQueNosDiferencia onHistoria={nav.toHistoria} />
           <Footer />
         </div>
       } />
-      <Route path="/experiencias" element={<AllExperiencesPage onBack={nav.back} onActivity={goToActivity} adventures={dbAdventures} />} />
+      <Route path="/experiencias" element={<AllExperiencesPage onBack={nav.back} onActivity={goToActivity} onBooking={goToBooking} adventures={dbAdventures} />} />
       <Route path="/sobre-nos" element={<NossaHistoriaPage onBack={nav.back} />} />
       <Route path="/apoio" element={<ApoioPage onBack={nav.back} />} />
       <Route path="/conquista" element={<ConquistaPage onBack={nav.back} />} />
@@ -4174,6 +4558,7 @@ function AppRoutes() {
         </div>
       } />
     </Routes>
+    </>
   );
 }
 

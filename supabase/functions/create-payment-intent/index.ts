@@ -16,6 +16,7 @@ Deno.serve(async (req) => {
   try {
     const {
       activityId,
+      activityDateId,
       activityTitle,
       dateRange,
       people,
@@ -23,6 +24,7 @@ Deno.serve(async (req) => {
       holders,
       totalAmount,
       depositAmount,
+      bookingType,
     } = await req.json();
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -32,6 +34,7 @@ Deno.serve(async (req) => {
       description: `Bored Originals — ${activityTitle ?? 'Experiência'} · ${dateRange} · ${people} pessoa${people > 1 ? 's' : ''} · Sinal 50%`,
       metadata: {
         activityId: String(activityId),
+        activityDateId: String(activityDateId ?? ''),
         activityTitle: activityTitle ?? '',
         dateRange,
         people: String(people),
@@ -39,6 +42,7 @@ Deno.serve(async (req) => {
         holders: JSON.stringify(holders),
         totalAmount: String(totalAmount),
         depositAmount: String(depositAmount),
+        bookingType: String(bookingType ?? 'full'),
       },
     });
 
