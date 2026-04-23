@@ -5,6 +5,16 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function isValidEmail(email: string): boolean {
+  return EMAIL_REGEX.test(normalizeEmail(email));
+}
+
 // ============================================================
 // TIPOS
 // ============================================================
@@ -188,9 +198,14 @@ export async function createBooking(booking: {
 
 /** Submete email para lista de notificação */
 export async function joinNotifyList(adventure_title: string, email: string) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    throw new Error('Email inválido');
+  }
+
   const { error } = await supabase
     .from('notify_list')
-    .insert({ adventure_title, email });
+    .insert({ adventure_title, email: normalizedEmail });
 
   if (error) throw error;
 }
@@ -217,13 +232,46 @@ export async function addToWaitlist(
   adventureId: string | null,
   email: string,
 ): Promise<{ error: string | null }> {
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    return { error: 'Email inválido.' };
+  }
+
   const { error } = await supabase.from('waitlist').insert({
     activity_date_id: activityDateId,
     adventure_id: adventureId ?? null,
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
   });
   if (error) {
     console.error('addToWaitlist error:', error);
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+// ============================================================
+// NEWSLETTER
+// ============================================================
+
+export async function subscribeNewsletter(
+  email: string,
+  source = 'website',
+): Promise<{ error: string | null }> {
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    return { error: 'Email inválido.' };
+  }
+
+  const { error } = await supabase
+    .from('newsletter_subscribers')
+    .insert({ email: normalizedEmail, source })
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    // código 23505 = unique_violation (email já existe)
+    if (error.code === '23505') return { error: null }; // já subscrito, ok silencioso
+    console.error('subscribeNewsletter error:', error);
     return { error: error.message };
   }
   return { error: null };

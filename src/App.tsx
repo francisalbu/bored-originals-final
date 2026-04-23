@@ -9,11 +9,16 @@ import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { MouseEvent, FormEvent } from 'react';
 import { MapPin, Flame, Zap, Compass, Tent, Mountain } from 'lucide-react';
-import { getAdventures, getAdventureByIndex } from './lib/supabase';
+import { getAdventures, getAdventureByIndex, joinNotifyList, subscribeNewsletter } from './lib/supabase';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '');
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isValidEmail(email: string): boolean {
+  return EMAIL_REGEX.test(email.trim());
+}
 
 function slugify(s: string): string {
   return s.toLowerCase()
@@ -289,10 +294,27 @@ const originals = [
 function NotifyModal({ title, onClose }: { title: string; onClose: () => void }) {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
-  const handleSubmit = (e: { preventDefault: () => void }) => {
+  const handleSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    if (email) setSubmitted(true);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isValidEmail(normalizedEmail)) {
+      setEmailError('Insere um email válido (ex: joao@exemplo.com).');
+      return;
+    }
+
+    setIsLoading(true);
+    setEmailError(null);
+    try {
+      await joinNotifyList(title, normalizedEmail);
+      setSubmitted(true);
+    } catch {
+      setEmailError('Não foi possível guardar. Tenta novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -323,13 +345,18 @@ function NotifyModal({ title, onClose }: { title: string; onClose: () => void })
                 type="email"
                 placeholder="o.teu@email.com"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => {
+                  setEmail(e.target.value);
+                  if (emailError) setEmailError(null);
+                }}
                 required
                 className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-neon-yellow/60 transition-colors"
               />
+              {emailError && <p className="text-red-400 text-xs">{emailError}</p>}
               <button type="submit"
-                className="w-full bg-neon-yellow text-black py-3.5 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:bg-white transition-colors">
-                Avisa-me →
+                disabled={isLoading}
+                className="w-full bg-neon-yellow text-black py-3.5 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:bg-white transition-colors disabled:opacity-50">
+                {isLoading ? 'A guardar…' : 'Avisa-me →'}
               </button>
             </form>
             <p className="text-white/20 text-[10px] text-center mt-4 uppercase tracking-widest">Sem spam. Só o essencial.</p>
@@ -2263,11 +2290,17 @@ function WaitlistModal({ date, adventureId, activityTitle, onClose, onHome, acti
 
   const handleEmailSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isValidEmail(normalizedEmail)) {
+      setEmailError('Insere um email válido (ex: joao@exemplo.com).');
+      return;
+    }
+
     setIsLoading(true);
     setEmailError(null);
     try {
       const { addToWaitlist } = await import('./lib/supabase');
-      const { error } = await addToWaitlist(date.id, adventureId ?? null, email);
+      const { error } = await addToWaitlist(date.id, adventureId ?? null, normalizedEmail);
       if (error) { setEmailError('Não foi possível guardar. Tenta novamente.'); return; }
     } catch {
       setEmailError('Erro de ligação. Tenta novamente.');
@@ -2521,7 +2554,10 @@ function WaitlistModal({ date, adventureId, activityTitle, onClose, onHome, acti
               <p className="text-white/40 font-body text-sm mb-8">Avisamos quando abrir um lugar nesta edição.</p>
               <div>
                 <label className="text-white/50 font-body text-[10px] uppercase tracking-[0.18em] block mb-3">Email</label>
-                <input required type="email" value={email} onChange={e => setEmail(e.target.value)}
+                <input required type="email" value={email} onChange={e => {
+                  setEmail(e.target.value);
+                  if (emailError) setEmailError(null);
+                }}
                   placeholder="joao@exemplo.com"
                   className="w-full bg-transparent border-b border-white/15 focus:border-white/50 outline-none text-white font-body text-base py-2 placeholder-white/20 transition-colors" />
               </div>
@@ -3150,6 +3186,124 @@ function ArrowRight(props: any) {
       <path d="M5 12h14"/>
       <path d="m12 5 7 7-7 7"/>
     </svg>
+  );
+}
+
+function NewsletterSimple() {
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isValidEmail(normalizedEmail)) {
+      setError('Insere um email válido.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { error: subError } = await subscribeNewsletter(normalizedEmail);
+      if (subError) throw new Error(subError);
+      setSubmitted(true);
+      setEmail('');
+    } catch {
+      setError('Não foi possível subscrever. Tenta novamente.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <section className="relative bg-brutal-black overflow-hidden py-28 md:py-36">
+      {/* Fundo decorativo */}
+      <div className="absolute inset-0 pointer-events-none select-none">
+        {/* glow amarelo central */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-neon-yellow/[0.05] blur-[120px]" />
+        {/* linha topo */}
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        {/* linha fundo */}
+        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      </div>
+
+      <div className="relative z-10 px-6 md:px-16 max-w-3xl mx-auto text-center">
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.7 }}
+        >
+          <p className="text-neon-yellow font-body text-[9px] font-bold uppercase tracking-[0.45em] mb-6">Newsletter</p>
+
+          <h2 className="text-white font-body font-extrabold leading-[0.88] tracking-tight mb-6"
+            style={{ fontSize: 'clamp(2.4rem, 6vw, 5.5rem)' }}>
+            Nunca percas<br /><span className="text-neon-yellow italic">uma aventura.</span>
+          </h2>
+
+          <p className="text-white/40 font-body text-base md:text-lg leading-relaxed max-w-xl mx-auto mb-10">
+            Novas experiências, vagas que abrem, criadores de conteúdo a fazer algo único, locais desconhecidos. Mensalmente enviamos-te uma curadoria do melhor que há em Portugal.
+          </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, delay: 0.15 }}
+        >
+          {submitted ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+              className="flex flex-col items-center gap-3"
+            >
+              <div className="w-12 h-12 rounded-full bg-neon-yellow/10 border border-neon-yellow/20 flex items-center justify-center">
+                <svg width="22" height="22" viewBox="0 0 28 28" fill="none"><path d="M4 14l7 7L24 7" stroke="#E8FF47" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+              <p className="text-white font-body font-bold text-lg">Estás dentro.</p>
+              <p className="text-white/35 font-body text-sm">Quando houver novidade, és o primeiro a saber.</p>
+            </motion.div>
+          ) : (
+            <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-stretch gap-3 max-w-lg mx-auto">
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={e => {
+                  setEmail(e.target.value);
+                  if (error) setError(null);
+                }}
+                placeholder="o.teu@email.com"
+                className="flex-1 bg-white/[0.06] border border-white/[0.1] rounded-2xl px-5 py-4 text-white text-sm font-body placeholder-white/20 focus:outline-none focus:border-neon-yellow/50 transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="bg-neon-yellow text-brutal-black font-body font-bold text-xs uppercase tracking-[0.18em] px-7 py-4 rounded-2xl hover:bg-white transition-colors duration-300 disabled:opacity-50 whitespace-nowrap"
+              >
+                {isLoading ? 'A enviar…' : 'Subscrever →'}
+              </button>
+            </form>
+          )}
+
+          {error && (
+            <p className="text-red-400 font-body text-xs mt-4">{error}</p>
+          )}
+
+          {!submitted && (
+            <p className="text-white/15 font-body text-[10px] uppercase tracking-[0.35em] mt-5">
+              Zero spam · podes sair quando quiseres
+            </p>
+          )}
+        </motion.div>
+      </div>
+    </section>
   );
 }
 
@@ -4542,6 +4696,7 @@ function AppRoutes() {
           <BoredOriginals onConquista={nav.toConquista} onActivity={goToActivity} onBooking={goToBooking} onAllExperiences={nav.toAllExperiences} adventures={dbAdventures} />
           <ProximasSaidas onConquista={nav.toConquista} onActivity={goToActivity} onBooking={goToBooking} dbAdventures={dbAdventures} />
           <OQueNosDiferencia onHistoria={nav.toHistoria} />
+          <NewsletterSimple />
           <Footer />
         </div>
       } />
