@@ -9,7 +9,9 @@ import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { MouseEvent, FormEvent } from 'react';
 import { MapPin, Flame, Zap, Compass, Tent, Mountain } from 'lucide-react';
-import { getAdventures, getAdventureByIndex, joinNotifyList, subscribeNewsletter } from './lib/supabase';
+import { supabase, getAdventures, getAdventureByIndex, joinNotifyList, subscribeNewsletter } from './lib/supabase';
+import posthog from 'posthog-js';
+
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
@@ -309,6 +311,7 @@ function NotifyModal({ title, onClose }: { title: string; onClose: () => void })
     setEmailError(null);
     try {
       await joinNotifyList(title, normalizedEmail);
+      posthog.capture('notify_submit', { adventure: title });
       setSubmitted(true);
     } catch {
       setEmailError('Não foi possível guardar. Tenta novamente.');
@@ -374,6 +377,119 @@ function NotifyModal({ title, onClose }: { title: string; onClose: () => void })
   );
 }
 
+function InterestModal({ title, adventureId, teaserDate, image, description, onClose }: { title: string; adventureId?: string; teaserDate?: string; image?: string; description?: string; onClose: () => void }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+    if (!trimmedName) { setError('Insere o teu nome.'); return; }
+    if (!isValidEmail(normalizedEmail)) { setError('Insere um email válido (ex: joao@exemplo.com).'); return; }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { error: dbErr } = await supabase.from('interest_list').insert({
+        adventure_id: adventureId ?? null,
+        adventure_title: title,
+        name: trimmedName,
+        email: normalizedEmail,
+      });
+      if (dbErr) throw dbErr;
+      posthog.capture('interest_submit', { adventure: title });
+      setSubmitted(true);
+    } catch {
+      setError('Não foi possível guardar. Tenta novamente.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-md overflow-hidden relative"
+      >
+        <button onClick={onClose} className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/50 text-white/60 hover:text-white hover:bg-black/80 transition-all text-xl">×</button>
+
+        {!submitted ? (
+          <>
+            {/* Card image header */}
+            {image && (
+              <div className="relative w-full h-48 overflow-hidden">
+                <img src={image} alt={title} className="w-full h-full object-cover brightness-75" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#111] via-[#111]/20 to-transparent" />
+                <div className="absolute bottom-4 left-5 flex items-center gap-2">
+                  <span className="bg-black/50 backdrop-blur-sm text-white/60 text-[9px] font-bold uppercase tracking-[0.25em] px-3 py-1.5 rounded-full">A planear</span>
+                  {teaserDate && <span className="bg-neon-yellow/20 text-neon-yellow text-[9px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">{teaserDate}</span>}
+                </div>
+              </div>
+            )}
+
+            <div className="p-7">
+              {!image && (
+                <div className="mb-5 flex items-center gap-2">
+                  <span className="bg-white/10 text-white/60 text-[9px] font-bold uppercase tracking-[0.25em] px-3 py-1.5 rounded-full">A planear</span>
+                  {teaserDate && <span className="bg-neon-yellow/15 text-neon-yellow text-[9px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full">{teaserDate}</span>}
+                </div>
+              )}
+              <h3 className="text-white font-bold text-2xl leading-snug mb-3">{title}</h3>
+              <p className="text-white/45 text-sm leading-relaxed mb-6">
+                {description
+                  ? <>{description}<br/><br/><span className="text-white/30">Ainda estamos a planear esta aventura. Deixa o teu contacto e, se avançar, és o primeiro a saber.</span></>
+                  : 'Ainda estamos a planear esta aventura. Deixa o teu contacto e, se avançar, és o primeiro a saber.'
+                }
+              </p>
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="O teu nome"
+                  value={name}
+                  onChange={e => { setName(e.target.value); if (error) setError(null); }}
+                  required
+                  className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-neon-yellow/60 transition-colors"
+                />
+                <input
+                  type="email"
+                  placeholder="o.teu@email.com"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); if (error) setError(null); }}
+                  required
+                  className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-neon-yellow/60 transition-colors"
+                />
+                {error && <p className="text-red-400 text-xs">{error}</p>}
+                <button type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-neon-yellow text-black py-3.5 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:bg-white transition-colors disabled:opacity-50">
+                  {isLoading ? 'A guardar…' : 'Tenho interesse →'}
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center py-12 px-8">
+            <div className="text-4xl mb-5">🙌</div>
+            <h3 className="text-white font-bold text-xl mb-3">Interesse registado!</h3>
+            <p className="text-white/40 text-sm leading-relaxed">Se <span className="text-white/70">{title}</span> avançar, entramos em contacto contigo em primeiro lugar.</p>
+            <button onClick={onClose} className="mt-7 border border-white/15 text-white/50 px-6 py-2.5 rounded-xl text-xs uppercase tracking-widest hover:border-white/40 hover:text-white transition-colors">Fechar</button>
+          </motion.div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, adventures: dbAdventures = [] }: { onConquista?: () => void; onActivity?: (i: number) => void; onBooking?: (i: number) => void; onAllExperiences?: () => void; adventures?: any[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -381,6 +497,7 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
   const scrollLeft = useRef(0);
   const [dragged, setDragged] = useState(false);
   const [notifyItem, setNotifyItem] = useState<string | null>(null);
+  const [interestItem, setInterestItem] = useState<{ title: string; adventureId?: string; teaserDate?: string; image?: string; description?: string } | null>(null);
   const [quickBooking, setQuickBooking] = useState<{ date: { id: string; date_range: string; status: string; spots: number; price: string }; title: string; image?: string; location?: string } | null>(null);
 
   const openBooking = (dbIndex: number) => {
@@ -401,6 +518,9 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
           image: a.card_image,
           hoverVideo: a.hover_video || undefined,
           comingSoon: a.coming_soon,
+          interestOnly: a.interest_only ?? false,
+          teaserDate: a.teaser_date ?? null,
+          _adventureId: a.id,
           price: a.price ?? null,
           nextDate: nextDate?.date_range ?? null,
           _dbIndex: a.index ?? i,
@@ -431,6 +551,7 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
   return (
     <section id="originals" className="bg-brutal-black relative z-10 pt-24 pb-0">
       {notifyItem && <NotifyModal title={notifyItem} onClose={() => setNotifyItem(null)} />}
+      {interestItem && <InterestModal title={interestItem.title} adventureId={interestItem.adventureId} teaserDate={interestItem.teaserDate} image={interestItem.image} description={interestItem.description} onClose={() => setInterestItem(null)} />}
       {quickBooking && <BookingModal date={quickBooking.date} activityTitle={quickBooking.title} activityImage={quickBooking.image} activityLocation={quickBooking.location} onClose={() => setQuickBooking(null)} onHome={() => setQuickBooking(null)} />}
       {/* Header */}
       <div className="px-4 md:px-16 pb-12">
@@ -480,7 +601,7 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: i * 0.08 }}
-              onClick={(e) => { if (!dragged && !(e.target as HTMLElement).closest('button')) { onActivity?.((item as any)._dbIndex ?? i); } }}
+              onClick={(e) => { if (!dragged && !(e.target as HTMLElement).closest('button')) { if ((item as any).interestOnly) { posthog.capture('interest_modal_open', { adventure: item.title }); setInterestItem({ title: item.title, adventureId: (item as any)._adventureId, teaserDate: (item as any).teaserDate ?? undefined, image: item.image, description: item.desc }); } else { posthog.capture('adventure_open', { adventure: item.title }); onActivity?.((item as any)._dbIndex ?? i); } } }}
               className="group relative flex-shrink-0 overflow-hidden rounded-3xl"
               style={{ width: 'clamp(260px, 72vw, 520px)', aspectRatio: (item as any).cardAspectRatio ?? '2/3', pointerEvents: dragged ? 'none' : 'auto', cursor: 'pointer' }}
             >
@@ -505,7 +626,7 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/5 to-transparent"></div>
 
               {/* Price tag — top left */}
-              {(item as any).price && (
+              {(item as any).price && !(item as any).interestOnly && (
                 <div className="absolute top-6 left-6">
                   <span className="bg-neon-yellow text-brutal-black font-body text-sm font-extrabold tracking-tight px-4 py-2 rounded-full shadow-lg">
                     {(item as any).price}
@@ -513,11 +634,13 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
                 </div>
               )}
               {/* Date — top right */}
-              <div className="absolute top-6 right-6">
-                <span className="bg-white/15 backdrop-blur-sm text-white font-body text-xs font-semibold tracking-[0.08em] px-3 py-2 rounded-full">
-                  {item.comingSoon ? 'Em breve' : ((item as any).nextDate ?? 'Em breve')}
-                </span>
-              </div>
+              {((item as any).interestOnly ? !!(item as any).teaserDate : true) && (
+                <div className="absolute top-6 right-6">
+                  <span className={`backdrop-blur-sm font-body text-xs font-semibold tracking-[0.08em] px-3 py-2 rounded-full ${ (item as any).interestOnly ? 'bg-white/10 text-white/50' : 'bg-white/15 text-white'}`}>
+                    {(item as any).interestOnly ? (item as any).teaserDate : (item.comingSoon ? 'Em breve' : ((item as any).nextDate ?? 'Em breve'))}
+                  </span>
+                </div>
+              )}
 
               {/* Content bottom */}
               <div className="absolute inset-x-0 bottom-0 p-7 flex flex-col">
@@ -532,12 +655,20 @@ function BoredOriginals({ onConquista, onActivity, onBooking, onAllExperiences, 
                       {item.desc}
                     </p>
                     <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-150">
-                        <button onClick={e => { e.stopPropagation(); if (item.comingSoon) { setNotifyItem(item.title); } else { openBooking((item as any)._dbIndex ?? i); } }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
-                          {item.comingSoon ? 'Entrar na lista' : 'Reservar'}
-                        </button>
-                        <button onClick={e => { e.stopPropagation(); onActivity?.((item as any)._dbIndex ?? i); }} className="border border-white/20 text-white/60 px-4 py-2 text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-xl hover:border-white/60 hover:text-white transition-colors">
-                          Saber mais
-                        </button>
+                        {(item as any).interestOnly ? (
+                          <button onClick={e => { e.stopPropagation(); posthog.capture('interest_modal_open', { adventure: item.title }); setInterestItem({ title: item.title, adventureId: (item as any)._adventureId, teaserDate: (item as any).teaserDate ?? undefined, image: item.image, description: item.desc }); }} className="bg-white/15 text-white px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white hover:text-black transition-colors">
+                            Tenho interesse
+                          </button>
+                        ) : (
+                          <>
+                            <button onClick={e => { e.stopPropagation(); if (item.comingSoon) { posthog.capture('notify_open', { adventure: item.title }); setNotifyItem(item.title); } else { posthog.capture('booking_open', { adventure: item.title }); openBooking((item as any)._dbIndex ?? i); } }} className="bg-neon-yellow text-brutal-black px-4 py-2 text-[10px] font-body font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-colors">
+                              {item.comingSoon ? 'Entrar na lista' : 'Reservar'}
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); posthog.capture('adventure_open', { adventure: item.title }); onActivity?.((item as any)._dbIndex ?? i); }} className="border border-white/20 text-white/60 px-4 py-2 text-[10px] font-body font-medium uppercase tracking-[0.15em] rounded-xl hover:border-white/60 hover:text-white transition-colors">
+                              Saber mais
+                            </button>
+                          </>
+                        )}
                       </div>
                   </div>
                 </div>
@@ -1305,12 +1436,6 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
             Acreditamos que as melhores histórias acontecem quando nos afastamos da rotina. E que a aventura é o único antídoto para os desassossegados, os inquietos e os curiosos.
           </p>
           <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body mb-6">
-            Como nós, que já fomos à boleia de Lisboa ao Qatar, percorremos o Líbano vendados e sem dinheiro nem telemóvel, atravessámos os EUA à boleia, completámos um Ironman com pouco treino, fizemos voluntariado na Índia ou vivemos com tribos na Colômbia.
-          </p>
-          <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body mb-6">
-            E que depois de tantas histórias percebemos que Portugal, a nossa casa, foi durante demasiado tempo tratada como se já a conhecêssemos em demasia. Como se fosse um sítio para voltar e não para descobrir. Até percebermos que temos um dos países mais absurdamente bonitos do mundo debaixo dos pés e que ele merece toda a nossa dedicação.
-          </p>
-          <p className="text-white/70 text-base md:text-lg leading-[1.75] font-body mb-6">
             Assim nasceu a <strong className="text-white">Bored.</strong> Para nos tirar do conformismo, da repetição acrítica do dia-a-dia e, sobretudo, para ser um ponto de encontro de uma tribo de exploradores que depende da aventura e da Natureza para conseguir sorrir.
           </p>
           <p className="text-white text-base md:text-lg leading-[1.75] font-body font-bold">
@@ -1327,40 +1452,6 @@ function NossaHistoriaPage({ onBack }: { onBack: () => void }) {
         >
           &ldquo;A aventura começa onde o conforto acaba.&rdquo;
         </motion.p>
-      </div>
-
-      {/* ── MANIFESTO ── */}
-      <div className="py-24">
-        <p className="text-neon-yellow font-body text-[10px] uppercase tracking-[0.35em] mb-12 px-8 md:px-20">Manifesto</p>
-        <div className="flex gap-5 px-8 md:px-20 overflow-x-auto snap-x snap-mandatory" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {[
-            { num: "01", titulo: "A Aventura Não Tem Guião.", texto: "As melhores histórias são improvisadas, cheias de reviravoltas e completamente inesperadas.", photo: "/foto1.jpg" },
-            { num: "02", titulo: "A Tua Zona de Conforto Não É Convidada.", texto: "As grandes aventuras começam onde a zona de conforto acaba. É aí que encontras crescimento, adrenalina e talvez um pouco de caos.", photo: "/foto2.JPG" },
-            { num: "03", titulo: "A Viagem Supera Sempre o Destino.", texto: "Não se trata de onde vais, mas das histórias loucas e inesperadas que recolhes pelo caminho.", photo: "/foto3.png" },
-            { num: "04", titulo: "Viaja Leve, Sonha Alto.", texto: "As nossas aventuras não são sobre o que trazes, mas sobre quem te tornas quando estás disposto a largar o ordinário.", photo: "/foto4.jpeg" },
-            { num: "05", titulo: "Não Estás Sozinho.", texto: "A aventura é melhor em conjunto. Junta-te a uma comunidade de exploradores tão curiosos, ousados e ligeiramente malucos como tu.", photo: "/neve.jpeg" },
-          ].map((item, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: i * 0.08 }}
-              className="group relative flex-shrink-0 snap-start rounded-3xl overflow-hidden flex flex-col justify-between cursor-default"
-              style={{ width: 'clamp(300px, 38vw, 480px)', height: 'clamp(380px, 48vw, 560px)' }}
-            >
-              {/* Background photo */}
-              <img src={item.photo} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-              {/* Dark overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/10 group-hover:from-black/70 transition-all duration-300" />
-              {/* Content */}
-              <div className="relative z-10 p-8">
-                <span className="text-[11px] font-body font-bold uppercase tracking-[0.3em] text-white/50">{item.num}</span>
-              </div>
-              <div className="relative z-10 p-8">
-                <p className="font-body font-extrabold text-[clamp(1.3rem,2.2vw,1.8rem)] leading-tight mb-3 text-white">{item.titulo}</p>
-                <p className="text-sm leading-[1.8] text-white/65">{item.texto}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
       </div>
 
       {/* ── SPLIT inverso: texto esquerda + foto direita ── */}
@@ -1594,11 +1685,13 @@ function StripePaymentForm({
 
     if (error) {
       console.error('[Stripe] error:', error);
+      posthog.capture('booking_payment_failed', { error_code: error.code, error_message: error.message, deposit_amount: depositAmount });
       setErrorMsg(error.message ?? 'Erro no pagamento. Tenta novamente.');
       setIsProcessing(false);
     } else if (paymentIntent) {
       console.log('[Stripe] paymentIntent.status:', paymentIntent.status);
       if (paymentIntent.status === 'succeeded' || paymentIntent.status === 'processing' || paymentIntent.status === 'requires_capture') {
+        posthog.capture('booking_payment_success', { payment_intent_status: paymentIntent.status, deposit_amount: depositAmount });
         onSuccess();
       } else {
         setErrorMsg(`Estado: ${paymentIntent.status}. Tenta novamente.`);
@@ -1781,6 +1874,7 @@ function BookingModal({ date, activityTitle, bookingType = 'standard', onClose, 
       const data = await res.json();
       if (data.clientSecret) {
         setClientSecret(data.clientSecret);
+        posthog.capture('booking_payment_started', { activity_title: activityTitle, date_range: date.date_range, people, deposit_amount: depositAmount });
         setStep(4);
       } else {
         setPaymentError(data.error ?? 'Erro desconhecido. Tenta novamente.');
@@ -2308,6 +2402,7 @@ function WaitlistModal({ date, adventureId, activityTitle, onClose, onHome, acti
     } finally {
       setIsLoading(false);
     }
+    posthog.capture('waitlist_email_submitted', { activity_title: activityTitle, date_range: date.date_range });
     setStep('emailDone');
   };
 
@@ -2341,6 +2436,7 @@ function WaitlistModal({ date, adventureId, activityTitle, onClose, onHome, acti
       const data = await res.json();
       if (data.clientSecret) {
         setClientSecret(data.clientSecret);
+        posthog.capture('waitlist_deposit_started', { activity_title: activityTitle, date_range: date.date_range, deposit_amount: 50 });
       } else {
         setPaymentError(data.error ?? 'Erro desconhecido. Tenta novamente.');
       }
@@ -3209,6 +3305,7 @@ function NewsletterSimple() {
     try {
       const { error: subError } = await subscribeNewsletter(normalizedEmail);
       if (subError) throw new Error(subError);
+      posthog.capture('newsletter_subscribe');
       setSubmitted(true);
       setEmail('');
     } catch {
@@ -3384,19 +3481,99 @@ function PartnerModal({ type, onClose }: { type: string; onClose: () => void }) 
   );
 }
 
-function Footer() {
-  const [partner, setPartner] = useState<string | null>(null);
+function SuggestActivityModal({ onClose }: { onClose: () => void }) {
+  const [suggestion, setSuggestion] = useState('');
+  const [email, setEmail] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const partners = [
-    { key: 'hotel',      label: 'Tens um hotel?' },
-    { key: 'alojamento', label: 'Tens um alojamento local?' },
-    { key: 'quinta',     label: 'Tens uma quinta?' },
-    { key: 'operador',   label: 'És operador turístico?' },
-  ];
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!suggestion.trim()) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await joinNotifyList(`Sugestão de atividade: ${suggestion.trim()}`, email.trim().toLowerCase() || 'anonimo@bored.pt');
+      posthog.capture('suggest_activity_submit');
+      setSubmitted(true);
+    } catch {
+      setError('Não foi possível enviar. Tenta novamente.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-sm p-8 relative">
+        <button onClick={onClose} className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center rounded-full text-white/30 hover:text-white hover:bg-white/10 transition-all text-xl">×</button>
+        {!submitted ? (
+          <>
+            <div className="text-4xl mb-5">💡</div>
+            <h3 className="text-white font-bold text-xl leading-snug mb-2">Sugere uma atividade!</h3>
+            <p className="text-white/40 text-sm leading-relaxed mb-7">Tens uma ideia para uma aventura que querias ver cá? Conta-nos tudo.</p>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <textarea
+                required
+                placeholder="Ex: Canoagem no Douro de noite com fogueira..."
+                value={suggestion}
+                onChange={e => setSuggestion(e.target.value)}
+                rows={3}
+                className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-neon-yellow/60 transition-colors resize-none"
+              />
+              <input
+                type="email"
+                placeholder="O teu email (opcional)"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full bg-white/8 border border-white/10 rounded-xl px-4 py-3.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-neon-yellow/60 transition-colors"
+              />
+              {error && <p className="text-red-400 text-xs">{error}</p>}
+              <button type="submit" disabled={isLoading}
+                className="w-full bg-neon-yellow text-black py-3.5 rounded-xl font-bold text-xs uppercase tracking-[0.15em] hover:bg-white transition-colors disabled:opacity-50">
+                {isLoading ? 'A enviar…' : 'Enviar sugestão →'}
+              </button>
+            </form>
+          </>
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center py-4">
+            <div className="text-4xl mb-5">🙌</div>
+            <h3 className="text-white font-bold text-xl mb-3">Obrigado!</h3>
+            <p className="text-white/40 text-sm leading-relaxed">Recebemos a tua sugestão. Quem sabe não se torna a próxima aventura.</p>
+            <button onClick={onClose} className="mt-7 border border-white/15 text-white/50 px-6 py-2.5 rounded-xl text-xs uppercase tracking-widest hover:border-white/40 hover:text-white transition-colors">Fechar</button>
+          </motion.div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function Footer() {
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      navigate('/');
+      setTimeout(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+      }, 400);
+    }
+  };
 
   return (
     <footer className="relative text-left overflow-hidden" style={{ backgroundImage: 'url(https://prifvutxutzcspiukzek.supabase.co/storage/v1/object/public/Originals/footer.jpg)', backgroundSize: 'cover', backgroundPosition: 'center top', minHeight: '55vh' }}>
-      {partner && <PartnerModal type={partner} onClose={() => setPartner(null)} />}
+      {suggestOpen && <SuggestActivityModal onClose={() => setSuggestOpen(false)} />}
       {/* Dark overlay — stronger at bottom */}
       <div className="absolute inset-0 z-10" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.75) 45%, rgba(0,0,0,0.3) 100%)' }} />
 
@@ -3414,20 +3591,19 @@ function Footer() {
           {/* Middle — nav links */}
           <div className="flex flex-col gap-2 items-center md:items-start">
             <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.3em] mb-2 font-bold">Explorar</p>
-            {[['Ver experiências', '#originals'], ['Próximas saídas', '#saidas'], ['Sobre nós', '#sobre'], ['FAQ', '#faq']].map(([label, href]) => (
-              <a key={label} href={href} className="text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">{label}</a>
-            ))}
+            <button onClick={() => { navigate('/experiencias'); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">Ver experiências</button>
+            <button onClick={() => scrollToSection('proximas-saidas')} className="text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">Próximas saídas</button>
+            <button onClick={() => { navigate('/sobre-nos'); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">Sobre nós</button>
+            <button onClick={() => { navigate('/apoio'); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">FAQ</button>
           </div>
 
-          {/* Right — partners */}
+          {/* Right — suggestion */}
           <div className="flex flex-col gap-2 items-center md:items-start">
             <p className="text-white/60 font-body text-[10px] uppercase tracking-[0.3em] mb-2 font-bold">Parcerias</p>
-            {partners.map(p => (
-              <button key={p.key} onClick={() => setPartner(p.key)}
-                className="text-left text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">
-                {p.label}
-              </button>
-            ))}
+            <button onClick={() => setSuggestOpen(true)}
+              className="text-left text-white/75 hover:text-neon-yellow font-body text-sm font-medium transition-colors duration-200">
+              Sugere uma atividade! 💡
+            </button>
           </div>
 
           <div className="flex flex-col gap-3 items-center md:items-start">
