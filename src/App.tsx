@@ -4803,7 +4803,7 @@ function AppRoutes() {
 
   const goToActivity = useCallback((index: number) => {
     const adv = dbAdventures.find((a: any) => (a.index ?? 0) === index);
-    const slug = adv ? slugify(adv.title) : String(index);
+    const slug = adv ? slugify(adv.title) : slugify(originals[index]?.title ?? String(index));
     navigate(`/actividade/${slug}`);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [dbAdventures, navigate]);
